@@ -17,24 +17,27 @@
 
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
-import { existsSync } from "node:fs";
+import { existsSync, readFileSync } from "node:fs";
 import { mkdtemp, rm, writeFile } from "node:fs/promises";
 import { homedir, tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import test from "node:test";
 import { fileURLToPath } from "node:url";
+import { resolveDoxygenBinary } from "../src/policy/platform.mjs";
 
 const root = dirname(dirname(fileURLToPath(import.meta.url)));
 const fixture = join(root, "tests", "fixtures", "cpp-doxygen");
-const doxygen = join(
+const tools = JSON.parse(
+	readFileSync(join(root, "src", "policy", "tools.json"), "utf8"),
+);
+const toolsRoot = join(
 	homedir(),
 	".dsh",
 	"plugins",
 	"coding-doc-standard",
 	"tools",
-	"doxygen-1.18.0",
-	"doxygen.exe",
 );
+const doxygen = resolveDoxygenBinary(toolsRoot, tools.doxygen);
 
 /**
  * Runs the repository verify command with the given arguments.
@@ -54,9 +57,19 @@ function runVerify(args) {
 }
 
 test("verifies the C++ fixture through the pinned Doxygen binary", {
-	skip: !existsSync(doxygen),
+	skip: !doxygen || !existsSync(doxygen),
 }, () => {
 	const result = runVerify(["--doxygen", join(fixture, "Doxyfile")]);
+	assert.equal(result.status, 0, `${result.stdout}\n${result.stderr}`);
+});
+
+test("resolves a relative Doxyfile path after changing the working directory", {
+	skip: !doxygen || !existsSync(doxygen),
+}, () => {
+	const result = runVerify([
+		"--doxygen",
+		join("tests", "fixtures", "cpp-doxygen", "Doxyfile"),
+	]);
 	assert.equal(result.status, 0, `${result.stdout}\n${result.stderr}`);
 });
 
