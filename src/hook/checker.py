@@ -27,8 +27,27 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Iterable
 
-SOURCE_EXTENSIONS = {".py", ".ts", ".js", ".mjs", ".cjs", ".rs", ".c", ".h", ".cc", ".cpp", ".hpp"}
-COMPOSE_DEFAULTS = ("compose.yaml", "compose.yml", "docker-compose.yaml", "docker-compose.yml", "compose.*.yaml", "compose.*.yml")
+SOURCE_EXTENSIONS = {
+    ".py",
+    ".ts",
+    ".js",
+    ".mjs",
+    ".cjs",
+    ".rs",
+    ".c",
+    ".h",
+    ".cc",
+    ".cpp",
+    ".hpp",
+}
+COMPOSE_DEFAULTS = (
+    "compose.yaml",
+    "compose.yml",
+    "docker-compose.yaml",
+    "docker-compose.yml",
+    "compose.*.yaml",
+    "compose.*.yml",
+)
 
 
 @dataclass(frozen=True)
@@ -75,7 +94,9 @@ def _load_policy(path: str | None) -> dict:
         return defaults
     if not isinstance(override, dict):
         return defaults
-    defaults.update({key: value for key, value in override.items() if key != "languages"})
+    defaults.update(
+        {key: value for key, value in override.items() if key != "languages"}
+    )
     if isinstance(override.get("languages"), dict):
         defaults["languages"].update(override["languages"])
     return defaults
@@ -134,7 +155,11 @@ def _require_labels(path: str, text: str, labels: Iterable[str]) -> list[Violati
     """
 
     lowered = text.lower()
-    return [Violation(path, 1, f"Missing '{label}' in file header") for label in labels if label.lower() not in lowered]
+    return [
+        Violation(path, 1, f"Missing '{label}' in file header")
+        for label in labels
+        if label.lower() not in lowered
+    ]
 
 
 def _check_compose(path: str, text: str) -> list[Violation]:
@@ -148,7 +173,20 @@ def _check_compose(path: str, text: str) -> list[Violation]:
         Compose-specific documentation violations.
     """
 
-    violations = _require_labels(path, _leading_comment_text(text), ("Author:", "Summary:", "Usage:", "Core principle:", "Setup:", "Workflow:", "API guide:", "Worked example:"))
+    violations = _require_labels(
+        path,
+        _leading_comment_text(text),
+        (
+            "Author:",
+            "Summary:",
+            "Usage:",
+            "Core principle:",
+            "Setup:",
+            "Workflow:",
+            "API guide:",
+            "Worked example:",
+        ),
+    )
     services_match = re.search(r"(?m)^services:\s*$", text)
     if not services_match:
         return violations + [Violation(path, 1, "Missing top-level 'services' mapping")]
@@ -156,10 +194,20 @@ def _check_compose(path: str, text: str) -> list[Violation]:
     service_pattern = re.compile(r"(?m)^( {2})([A-Za-z0-9][A-Za-z0-9_.-]*):\s*$")
     for match in service_pattern.finditer(services_tail):
         preceding = services_tail[max(0, match.start() - 600) : match.start()]
-        comments = "\n".join(line.strip()[1:].strip() for line in preceding.splitlines()[-8:] if line.strip().startswith("#"))
+        comments = "\n".join(
+            line.strip()[1:].strip()
+            for line in preceding.splitlines()[-8:]
+            if line.strip().startswith("#")
+        )
         if "summary:" not in comments.lower():
             line = text[: services_match.end() + match.start()].count("\n") + 1
-            violations.append(Violation(path, line, f"Missing Summary comment for service '{match.group(2)}'"))
+            violations.append(
+                Violation(
+                    path,
+                    line,
+                    f"Missing Summary comment for service '{match.group(2)}'",
+                )
+            )
     return violations
 
 
@@ -176,7 +224,9 @@ def _source_header(path: str, text: str) -> str:
 
     suffix = Path(path).suffix.lower()
     if suffix == ".py":
-        match = re.match(r"\s*(?:[rubfRUBF]{0,2})?(?:'''|\"\"\")(.*?)(?:'''|\"\"\")", text, re.S)
+        match = re.match(
+            r"\s*(?:[rubfRUBF]{0,2})?(?:'''|\"\"\")(.*?)(?:'''|\"\"\")", text, re.S
+        )
     elif suffix in {".ts", ".js", ".mjs", ".cjs", ".c", ".h", ".cc", ".cpp", ".hpp"}:
         match = re.match(r"\s*/\*\*(.*?)\*/", text, re.S)
     elif suffix == ".rs":
@@ -203,10 +253,18 @@ def _check_python_public_units(path: str, text: str) -> list[Violation]:
         return [Violation(path, error.lineno or 1, f"Python syntax error: {error.msg}")]
     violations: list[Violation] = []
     for node in module.body:
-        if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef)) and not node.name.startswith("_"):
+        if isinstance(
+            node, (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef)
+        ) and not node.name.startswith("_"):
             doc = ast.get_docstring(node, clean=False)
             if not doc:
-                violations.append(Violation(path, node.lineno, f"Missing unit doc for public unit '{node.name}'"))
+                violations.append(
+                    Violation(
+                        path,
+                        node.lineno,
+                        f"Missing unit doc for public unit '{node.name}'",
+                    )
+                )
     return violations
 
 
@@ -226,11 +284,22 @@ def check_content(path: str, text: str, policy: dict | None = None) -> list[Viol
     if not effective.get("enabled", True):
         return []
     if _is_compose(path, effective):
-        return _check_compose(path, text) if effective["languages"].get("dockerCompose", True) else []
+        return (
+            _check_compose(path, text)
+            if effective["languages"].get("dockerCompose", True)
+            else []
+        )
     suffix = Path(path).suffix.lower()
     if suffix not in SOURCE_EXTENSIONS:
         return []
-    family = {".py": "python", ".rs": "rust", ".ts": "typescriptJavascript", ".js": "typescriptJavascript", ".mjs": "typescriptJavascript", ".cjs": "typescriptJavascript"}.get(suffix, "cCpp")
+    family = {
+        ".py": "python",
+        ".rs": "rust",
+        ".ts": "typescriptJavascript",
+        ".js": "typescriptJavascript",
+        ".mjs": "typescriptJavascript",
+        ".cjs": "typescriptJavascript",
+    }.get(suffix, "cCpp")
     if not effective["languages"].get(family, True):
         return []
     header = _source_header(path, text)
@@ -258,13 +327,20 @@ def main() -> int:
     parser.add_argument("--stdin", action="store_true")
     args = parser.parse_args()
     try:
-        text = sys.stdin.read() if args.stdin else Path(args.path).read_text(encoding="utf-8")
+        text = (
+            sys.stdin.read()
+            if args.stdin
+            else Path(args.path).read_text(encoding="utf-8")
+        )
     except OSError as error:
         print(f"[doc-standard] Cannot read candidate: {error}", file=sys.stderr)
         return 1
     violations = check_content(args.path, text, _load_policy(args.policy))
     for violation in violations:
-        print(f"{violation.path}:{violation.line} [doc-standard] {violation.message}", file=sys.stderr)
+        print(
+            f"{violation.path}:{violation.line} [doc-standard] {violation.message}",
+            file=sys.stderr,
+        )
     return 2 if violations else 0
 
 
