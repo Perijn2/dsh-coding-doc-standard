@@ -1,0 +1,4 @@
+tests/
+coverage/
+*.pyc
+__pycache__/

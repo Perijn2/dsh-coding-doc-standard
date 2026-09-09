@@ -1,0 +1,4 @@
+# Bundle-owned Cordis registration. Installers must not copy this row into a profile patch.
+- insert:
+    - id: coding-doc-standard
+      name: coding-doc-standard
