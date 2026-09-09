@@ -30,6 +30,7 @@ const required = [
 	"src/policy/defaults.json",
 	"src/policy/tools.json",
 	"scripts/provision-tools.mjs",
+	"scripts/verify-dsh-contract.mjs",
 	"skill/SKILL.md",
 	"skill/references/docker-compose.md",
 ];
