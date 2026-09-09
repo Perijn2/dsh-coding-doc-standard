@@ -1,32 +1,35 @@
 {
-  "enabled": true,
-  "languages": {
-    "python": true,
-    "typescriptJavascript": true,
-    "rust": true,
-    "cCpp": true,
-    "dockerCompose": true
-  },
-  "formatters": {
-    "python": "ruff",
-    "typescriptJavascript": "biome",
-    "rust": "rustfmt",
-    "cCpp": "clang-format",
-    "dockerCompose": "prettier"
-  },
-  "linters": {
-    "python": ["ruff"],
-    "typescriptJavascript": ["biome"],
-    "rust": ["clippy"],
-    "cCpp": ["clang-tidy"],
-    "dockerCompose": ["yamllint"]
-  },
-  "composePatterns": [
-    "compose.yaml",
-    "compose.yml",
-    "docker-compose.yaml",
-    "docker-compose.yml",
-    "compose.*.yaml",
-    "compose.*.yml"
-  ]
+	"enabled": true,
+	"languages": {
+		"python": true,
+		"typescriptJavascript": true,
+		"rust": true,
+		"cCpp": true,
+		"dockerCompose": true
+	},
+	"formatOnWrite": true,
+	"formatPython": true,
+	"formatTypescriptJavascript": true,
+	"formatDockerCompose": true,
+	"blockOnMissingFormatter": true,
+	"formatters": {
+		"python": "ruff@0.16.6",
+		"typescriptJavascript": "@biomejs/biome@2.5.12",
+		"dockerCompose": "prettier@3.9.6"
+	},
+	"linters": {
+		"python": ["ruff@0.16.6"],
+		"typescriptJavascript": ["@biomejs/biome@2.5.12"],
+		"rust": ["clippy (project toolchain)"],
+		"cCpp": ["clang-tidy (project toolchain)"],
+		"dockerCompose": ["yamllint (project toolchain)"]
+	},
+	"composePatterns": [
+		"compose.yaml",
+		"compose.yml",
+		"docker-compose.yaml",
+		"docker-compose.yml",
+		"compose.*.yaml",
+		"compose.*.yml"
+	]
 }

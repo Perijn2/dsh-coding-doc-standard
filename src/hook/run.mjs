@@ -1,32 +1,51 @@
 /**
  * @module hook-runner
  * @author Perijn Huijser
- * Builds pending write candidates and invokes the documentation checker.
+ * Builds pending candidates, enforces pinned fast formatting, and checks documentation.
  *
  * @remarks
  * Usage:
  *   Core principle: Validate exactly the candidate text a write or edit would
- *   create, never stale disk content.
- *   Setup: Configure this file as the command entry in the hooks bridge and
- *   provide its JSON payload through standard input.
- *   Workflow: Parse the tool payload, construct candidate content, then spawn
- *   the Python checker with the candidate on standard input.
- *   API guide: The exported `runHook` function supports direct integration tests.
- *   Worked example: echo '{"tool_name":"write","tool_input":{"file_path":"a.py","content":""}}' | node run.mjs
+ *   create, never stale disk content or formatter-mutated files.
+ *   Setup: Configure this file as the command entry in the hooks bridge and run
+ *   the package tool provisioning command before enabling formatting.
+ *   Workflow: Parse a tool payload, build its candidate, check its pinned
+ *   formatter, then invoke the Python documentation checker.
+ *   API guide: Use candidateFromPayload and checkFormatting in integration tests;
+ *   use runHook as the hook-process entry point.
+ *   Worked example: echo '{"tool_input":{"file_path":"a.py","content":""}}' | node run.mjs
  */
 
-import { existsSync } from 'node:fs'
-import { readFile } from 'node:fs/promises'
-import { spawn } from 'node:child_process'
-import { homedir } from 'node:os'
-import { fileURLToPath } from 'node:url'
-import { dirname, join } from 'node:path'
+import { spawn } from "node:child_process";
+import { existsSync, readFileSync } from "node:fs";
+import { readFile } from "node:fs/promises";
+import { homedir } from "node:os";
+import { basename, dirname, extname, join, resolve } from "node:path";
+import { fileURLToPath } from "node:url";
 
-const sourceRoot = dirname(dirname(fileURLToPath(import.meta.url)))
-const checker = join(sourceRoot, 'hook', 'checker.py')
-const defaultsPolicy = join(sourceRoot, 'policy', 'defaults.json')
-const durablePolicy = join(homedir(), '.dsh', 'plugins', 'coding-doc-standard', 'policy.json')
-const policy = process.env.CODING_DOC_STANDARD_POLICY ?? (existsSync(durablePolicy) ? durablePolicy : defaultsPolicy)
+const sourceRoot = dirname(dirname(fileURLToPath(import.meta.url)));
+const packageRoot = dirname(sourceRoot);
+const checker = join(sourceRoot, "hook", "checker.py");
+const defaultsPolicy = join(sourceRoot, "policy", "defaults.json");
+const durableRoot = join(homedir(), ".dsh", "plugins", "coding-doc-standard");
+const durablePolicy = join(durableRoot, "policy.json");
+const ruffVersion = "0.16.6";
+
+/**
+ * Reads effective hook policy from durable state or package defaults.
+ *
+ * @returns {Record<string, unknown>} Effective policy object.
+ */
+export function loadPolicy() {
+	const selected =
+		process.env.CODING_DOC_STANDARD_POLICY ??
+		(existsSync(durablePolicy) ? durablePolicy : defaultsPolicy);
+	try {
+		return JSON.parse(readFileSync(selected, "utf8"));
+	} catch {
+		return JSON.parse(readFileSync(defaultsPolicy, "utf8"));
+	}
+}
 
 /**
  * Builds the proposed content from a DeepSeek Harness write or edit payload.
@@ -36,18 +55,135 @@ const policy = process.env.CODING_DOC_STANDARD_POLICY ?? (existsSync(durablePoli
  * @throws {Error} When the payload is unsupported or an edit cannot be applied exactly once.
  */
 export async function candidateFromPayload(payload) {
-  const input = payload.tool_input
-  if (!input || typeof input !== 'object') throw new Error('tool_input must be an object')
-  const path = input.file_path
-  if (typeof path !== 'string' || !path) throw new Error('tool_input.file_path is required')
-  if (typeof input.content === 'string') return { path, content: input.content }
-  if (typeof input.old_string !== 'string' || typeof input.new_string !== 'string') {
-    throw new Error('expected write content or edit old_string/new_string')
-  }
-  const before = await readFile(path, 'utf8')
-  const count = before.split(input.old_string).length - 1
-  if (count !== 1) throw new Error(`edit old_string must match exactly once (matched ${count})`)
-  return { path, content: before.replace(input.old_string, input.new_string) }
+	const input = payload.tool_input;
+	if (!input || typeof input !== "object")
+		throw new Error("tool_input must be an object");
+	const path = input.file_path;
+	if (typeof path !== "string" || !path)
+		throw new Error("tool_input.file_path is required");
+	if (typeof input.content === "string")
+		return { path, content: input.content };
+	if (
+		typeof input.old_string !== "string" ||
+		typeof input.new_string !== "string"
+	) {
+		throw new Error("expected write content or edit old_string/new_string");
+	}
+	const before = await readFile(path, "utf8");
+	const count = before.split(input.old_string).length - 1;
+	if (count !== 1)
+		throw new Error(
+			`edit old_string must match exactly once (matched ${count})`,
+		);
+	return { path, content: before.replace(input.old_string, input.new_string) };
+}
+
+/**
+ * Identifies the pre-write formatter profile for a candidate path.
+ *
+ * @param {string} path - Candidate filesystem path.
+ * @param {Record<string, unknown>} policy - Effective policy.
+ * @returns {'python' | 'typescriptJavascript' | 'dockerCompose' | null} Formatter profile.
+ */
+export function formatterProfile(path, policy) {
+	if (!policy.formatOnWrite) return null;
+	const file = basename(path).toLowerCase();
+	const extension = extname(file);
+	if (extension === ".py" && policy.formatPython) return "python";
+	if (
+		[".ts", ".js", ".mjs", ".cjs"].includes(extension) &&
+		policy.formatTypescriptJavascript
+	)
+		return "typescriptJavascript";
+	const patterns = policy.composePatterns ?? [];
+	if (
+		policy.formatDockerCompose &&
+		patterns.some((pattern) => {
+			const expression = `^${pattern.replace(/[.+^${}()|[\]\\]/g, "\\$&").replaceAll("*", ".*")}$`;
+			return new RegExp(expression, "i").test(file);
+		})
+	)
+		return "dockerCompose";
+	return null;
+}
+
+function executable(name) {
+	const suffix = process.platform === "win32" ? ".cmd" : "";
+	return join(packageRoot, "node_modules", ".bin", `${name}${suffix}`);
+}
+
+function ruffExecutable() {
+	const name = process.platform === "win32" ? "ruff.exe" : "ruff";
+	return join(durableRoot, "tools", `ruff-${ruffVersion}`, "bin", name);
+}
+
+function execute(command, args, content) {
+	return new Promise((resolve) => {
+		const child = spawn(command, args, {
+			stdio: ["pipe", "pipe", "pipe"],
+			shell: process.platform === "win32",
+		});
+		let stdout = "";
+		let stderr = "";
+		child.stdout.setEncoding("utf8");
+		child.stderr.setEncoding("utf8");
+		child.stdout.on("data", (chunk) => {
+			stdout += chunk;
+		});
+		child.stderr.on("data", (chunk) => {
+			stderr += chunk;
+		});
+		child.once("error", (error) =>
+			resolve({ code: null, stdout, stderr, error }),
+		);
+		child.once("exit", (code) => resolve({ code, stdout, stderr }));
+		child.stdin.end(content);
+	});
+}
+
+/**
+ * Checks a candidate against its configured pinned formatter without modifying files.
+ *
+ * @param {{path: string, content: string}} candidate - Proposed file state.
+ * @param {Record<string, unknown>} [policy] - Effective policy override for testing.
+ * @returns {Promise<string | null>} Blocking message, or null when formatting passes or is disabled.
+ */
+export async function checkFormatting(candidate, policy = loadPolicy()) {
+	const profile = formatterProfile(candidate.path, policy);
+	if (!profile) return null;
+	const unavailable = (label) =>
+		policy.blockOnMissingFormatter !== false
+			? `[doc-standard] Required pinned formatter is unavailable: ${label}. Run npm run provision-tools.`
+			: null;
+	if (profile === "python") {
+		const command = ruffExecutable();
+		if (!existsSync(command)) return unavailable(`ruff ${ruffVersion}`);
+		const result = await execute(
+			command,
+			["format", "--check", "--stdin-filename", candidate.path, "-"],
+			candidate.content,
+		);
+		if (result.code === 0) return null;
+		return `[doc-standard] Python code must match Ruff ${ruffVersion}. ${result.stderr.trim()}`.trim();
+	}
+	const command = executable(
+		profile === "typescriptJavascript" ? "biome" : "prettier",
+	);
+	const label =
+		profile === "typescriptJavascript"
+			? "@biomejs/biome 2.5.12"
+			: "prettier 3.9.6";
+	if (!existsSync(command)) return unavailable(label);
+	const args =
+		profile === "typescriptJavascript"
+			? ["format", "--stdin-file-path", candidate.path]
+			: ["--stdin-filepath", candidate.path];
+	const result = await execute(command, args, candidate.content);
+	if (result.code !== 0)
+		return `[doc-standard] ${label} could not format ${candidate.path}. ${result.stderr.trim()}`.trim();
+	return result.stdout === candidate.content
+		? null
+		: `[doc-standard] ${candidate.path} must match ${label} formatting.`;
 }
 
 /**
@@ -57,43 +193,62 @@ export async function candidateFromPayload(payload) {
  * @returns {Promise<number>} Checker exit code.
  */
 export function runChecker(candidate) {
-  const python = process.platform === 'win32' ? 'py' : 'python3'
-  const args = process.platform === 'win32'
-    ? ['-3', checker, candidate.path, '--policy', policy, '--stdin']
-    : [checker, candidate.path, '--policy', policy, '--stdin']
-  return new Promise((resolve, reject) => {
-    const child = spawn(python, args, { stdio: ['pipe', 'inherit', 'inherit'] })
-    child.once('error', reject)
-    child.once('exit', (code) => resolve(code ?? 1))
-    child.stdin.end(candidate.content)
-  })
+	const python = process.platform === "win32" ? "py" : "python3";
+	const policy =
+		process.env.CODING_DOC_STANDARD_POLICY ??
+		(existsSync(durablePolicy) ? durablePolicy : defaultsPolicy);
+	const args =
+		process.platform === "win32"
+			? ["-3", checker, candidate.path, "--policy", policy, "--stdin"]
+			: [checker, candidate.path, "--policy", policy, "--stdin"];
+	return new Promise((resolve, reject) => {
+		const child = spawn(python, args, {
+			stdio: ["pipe", "inherit", "inherit"],
+		});
+		child.once("error", reject);
+		child.once("exit", (code) => resolve(code ?? 1));
+		child.stdin.end(candidate.content);
+	});
 }
 
 /**
- * Executes a hook payload and converts invalid payloads into blocking feedback.
+ * Executes a hook payload and converts validation failures into blocking feedback.
  *
  * @param {Record<string, unknown>} payload - Hook event payload.
  * @returns {Promise<number>} Hook-compatible process status.
  */
 export async function runHook(payload) {
-  try {
-    return await runChecker(await candidateFromPayload(payload))
-  } catch (error) {
-    console.error(`[doc-standard] Cannot validate pending write: ${error.message}`)
-    return 2
-  }
+	try {
+		const candidate = await candidateFromPayload(payload);
+		const formattingFailure = await checkFormatting(candidate);
+		if (formattingFailure) {
+			console.error(formattingFailure);
+			return 2;
+		}
+		return await runChecker(candidate);
+	} catch (error) {
+		console.error(
+			`[doc-standard] Cannot validate pending write: ${error.message}`,
+		);
+		return 2;
+	}
 }
 
-if (import.meta.url === `file://${process.argv[1]?.replaceAll('\\', '/')}`) {
-  let raw = ''
-  process.stdin.setEncoding('utf8')
-  process.stdin.on('data', (chunk) => { raw += chunk })
-  process.stdin.once('end', async () => {
-    try {
-      process.exitCode = await runHook(JSON.parse(raw))
-    } catch {
-      console.error('[doc-standard] Hook payload is not valid JSON')
-      process.exitCode = 2
-    }
-  })
+if (
+	process.argv[1] &&
+	resolve(fileURLToPath(import.meta.url)) === resolve(process.argv[1])
+) {
+	let raw = "";
+	process.stdin.setEncoding("utf8");
+	process.stdin.on("data", (chunk) => {
+		raw += chunk;
+	});
+	process.stdin.once("end", async () => {
+		try {
+			process.exitCode = await runHook(JSON.parse(raw));
+		} catch {
+			console.error("[doc-standard] Hook payload is not valid JSON");
+			process.exitCode = 2;
+		}
+	});
 }
