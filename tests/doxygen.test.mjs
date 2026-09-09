@@ -5,12 +5,13 @@
  *
  * @remarks
  * Usage:
- *   Core principle: Exercise the verifier through a minimal, project-owned
- *   Doxyfile without inventing application documentation configuration.
- *   Setup: Provision the native Doxygen tool before running this integration test.
- *   Workflow: Write a temporary Doxyfile, invoke the verify command, and assert
- *   that required warning policy is accepted.
- *   API guide: The test skips only when the optional native tool is unprovisioned.
+ *   Core principle: Exercise the verifier through the project-owned fixture
+ *   instead of inventing throwaway documentation configuration.
+ *   Setup: Provision the native Doxygen tool before running the positive test.
+ *   Workflow: Run the verify command against the fixture Doxyfile and assert the
+ *   required warning policy is enforced.
+ *   API guide: The positive test skips only when the optional native tool is
+ *   unprovisioned; the policy test always runs.
  *   Worked example: npm run provision-tools && npm test
  */
 
@@ -24,6 +25,7 @@ import test from "node:test";
 import { fileURLToPath } from "node:url";
 
 const root = dirname(dirname(fileURLToPath(import.meta.url)));
+const fixture = join(root, "tests", "fixtures", "cpp-doxygen");
 const doxygen = join(
 	homedir(),
 	".dsh",
@@ -35,56 +37,52 @@ const doxygen = join(
 );
 
 /**
- * Executes an action in a temporary directory and removes it afterwards.
+ * Runs the repository verify command with the given arguments.
  *
- * @param {(directory: string) => Promise<void>} action - Temporary-directory action.
- * @returns {Promise<void>} Completion after cleanup.
+ * @param {string[]} args - Arguments passed to scripts/verify.mjs.
+ * @returns {import('node:child_process').SpawnSyncReturns<string>} Spawn result.
  */
-async function withTemporaryDirectory(action) {
-	const directory = await mkdtemp(
-		join(tmpdir(), "coding-doc-standard-doxygen-"),
+function runVerify(args) {
+	return spawnSync(
+		process.execPath,
+		[join(root, "scripts", "verify.mjs"), ...args],
+		{
+			cwd: root,
+			encoding: "utf8",
+		},
 	);
-	try {
-		await action(directory);
-	} finally {
-		await rm(directory, { recursive: true, force: true });
-	}
 }
 
-test("verifies a Doxyfile with required warning policy", {
+test("verifies the C++ fixture through the pinned Doxygen binary", {
 	skip: !existsSync(doxygen),
-}, async () => {
-	await withTemporaryDirectory(async (directory) => {
+}, () => {
+	const result = runVerify(["--doxygen", join(fixture, "Doxyfile")]);
+	assert.equal(result.status, 0, `${result.stdout}\n${result.stderr}`);
+});
+
+test("rejects a Doxyfile without the required warning policy", async () => {
+	const directory = await mkdtemp(
+		join(tmpdir(), "coding-doc-standard-doxyfile-"),
+	);
+	try {
 		const doxyfile = join(directory, "Doxyfile");
 		await writeFile(
-			join(directory, "example.cpp"),
-			`/** @brief Returns the configured answer. */
-int answer() { return 42; }
-`,
-			"utf8",
-		);
-		await writeFile(
 			doxyfile,
-			`PROJECT_NAME = "Documentation Standard Test"
-INPUT = ${directory}
-OUTPUT_DIRECTORY = ${join(directory, "output")}
+			`PROJECT_NAME = "Weak Policy Fixture"
+INPUT = ${fixture}
 GENERATE_HTML = YES
-GENERATE_LATEX = NO
 WARN_IF_UNDOCUMENTED = YES
-WARN_IF_DOC_ERROR = YES
-WARN_AS_ERROR = YES
 EXTRACT_ALL = YES
 `,
 			"utf8",
 		);
-		const result = spawnSync(
-			process.execPath,
-			[join(root, "scripts", "verify.mjs"), "--doxygen", doxyfile],
-			{
-				cwd: root,
-				encoding: "utf8",
-			},
+		const result = runVerify(["--doxygen", doxyfile]);
+		assert.notEqual(result.status, 0);
+		assert.match(
+			`${result.stdout}${result.stderr}`,
+			/WARN_IF_DOC_ERROR|WARN_AS_ERROR/,
 		);
-		assert.equal(result.status, 0, result.stderr);
-	});
+	} finally {
+		await rm(directory, { recursive: true, force: true });
+	}
 });

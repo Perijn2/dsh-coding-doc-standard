@@ -113,12 +113,12 @@ function verifyDoxygenConfiguration(path) {
 function verifyDoxygen(path) {
 	if (!path) throw new Error("--doxygen requires a Doxyfile path");
 	if (!existsSync(path)) throw new Error(`Doxyfile does not exist: ${path}`);
+	verifyDoxygenConfiguration(path);
 	if (!existsSync(doxygenBinary)) {
 		throw new Error(
 			`pinned Doxygen ${tools.doxygen.version} is unavailable; run npm run provision-tools`,
 		);
 	}
-	verifyDoxygenConfiguration(path);
 	execute(doxygenBinary, [path], dirname(path));
 }
 
