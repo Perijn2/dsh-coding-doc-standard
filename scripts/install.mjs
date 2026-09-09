@@ -15,36 +15,59 @@
  *   Worked example: node scripts/install.mjs --dry-run
  */
 
-import { cpSync, existsSync, lstatSync, mkdirSync, rmSync, symlinkSync } from 'node:fs'
-import { homedir } from 'node:os'
-import { dirname, join } from 'node:path'
-import { fileURLToPath } from 'node:url'
+import {
+	cpSync,
+	existsSync,
+	lstatSync,
+	mkdirSync,
+	rmSync,
+	symlinkSync,
+} from "node:fs";
+import { homedir } from "node:os";
+import { dirname, join } from "node:path";
+import { fileURLToPath } from "node:url";
+import { provisionTools } from "./provision-tools.mjs";
 
-const packageRoot = dirname(dirname(fileURLToPath(import.meta.url)))
-const dryRun = process.argv.includes('--dry-run')
-const packageJson = JSON.parse(await (await import('node:fs/promises')).readFile(join(packageRoot, 'package.json'), 'utf8'))
-const patch = packageJson.dsh?.bundle?.patch
-if (patch !== './bundle.patch.yml' || !existsSync(join(packageRoot, patch))) {
-  throw new Error('package must declare an existing dsh.bundle.patch')
+const packageRoot = dirname(dirname(fileURLToPath(import.meta.url)));
+const dryRun = process.argv.includes("--dry-run");
+const packageJson = JSON.parse(
+	await (await import("node:fs/promises")).readFile(
+		join(packageRoot, "package.json"),
+		"utf8",
+	),
+);
+const patch = packageJson.dsh?.bundle?.patch;
+if (patch !== "./bundle.patch.yml" || !existsSync(join(packageRoot, patch))) {
+	throw new Error("package must declare an existing dsh.bundle.patch");
 }
+await provisionTools({ dryRun });
 
 const targets = [
-  join(homedir(), '.dsh', 'node_modules', packageJson.name),
-  join(homedir(), '.dsh', 'profiles', 'web', 'node_modules', packageJson.name),
-]
-const skillTarget = join(homedir(), '.dsh', 'skills', packageJson.name)
+	join(homedir(), ".dsh", "node_modules", packageJson.name),
+	join(homedir(), ".dsh", "profiles", "web", "node_modules", packageJson.name),
+];
+const skillTarget = join(homedir(), ".dsh", "skills", packageJson.name);
 
 for (const target of targets) {
-  console.log(`${dryRun ? 'would link' : 'linking'} ${target} -> ${packageRoot}`)
-  if (dryRun) continue
-  mkdirSync(dirname(target), { recursive: true })
-  if (existsSync(target) || lstatSync(target, { throwIfNoEntry: false })) rmSync(target, { recursive: true, force: true })
-  symlinkSync(packageRoot, target, process.platform === 'win32' ? 'junction' : 'dir')
+	console.log(
+		`${dryRun ? "would link" : "linking"} ${target} -> ${packageRoot}`,
+	);
+	if (dryRun) continue;
+	mkdirSync(dirname(target), { recursive: true });
+	if (existsSync(target) || lstatSync(target, { throwIfNoEntry: false }))
+		rmSync(target, { recursive: true, force: true });
+	symlinkSync(
+		packageRoot,
+		target,
+		process.platform === "win32" ? "junction" : "dir",
+	);
 }
-console.log(`${dryRun ? 'would copy' : 'copying'} skill ${skillTarget}`)
+console.log(`${dryRun ? "would copy" : "copying"} skill ${skillTarget}`);
 if (!dryRun) {
-  rmSync(skillTarget, { recursive: true, force: true })
-  mkdirSync(dirname(skillTarget), { recursive: true })
-  cpSync(join(packageRoot, 'skill'), skillTarget, { recursive: true })
+	rmSync(skillTarget, { recursive: true, force: true });
+	mkdirSync(dirname(skillTarget), { recursive: true });
+	cpSync(join(packageRoot, "skill"), skillTarget, { recursive: true });
 }
-console.log('Bundle patch registration remains package-owned; no profile patch was modified.')
+console.log(
+	"Bundle patch registration remains package-owned; no profile patch was modified.",
+);

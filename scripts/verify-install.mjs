@@ -14,24 +14,27 @@
  *   Worked example: node scripts/verify-install.mjs
  */
 
-import { existsSync, readFileSync } from 'node:fs'
-import { dirname, join } from 'node:path'
-import { fileURLToPath } from 'node:url'
+import { existsSync, readFileSync } from "node:fs";
+import { dirname, join } from "node:path";
+import { fileURLToPath } from "node:url";
 
-const root = dirname(dirname(fileURLToPath(import.meta.url)))
-const manifest = JSON.parse(readFileSync(join(root, 'package.json'), 'utf8'))
+const root = dirname(dirname(fileURLToPath(import.meta.url)));
+const manifest = JSON.parse(readFileSync(join(root, "package.json"), "utf8"));
 const required = [
-  manifest.dsh?.bundle?.patch,
-  'src/host/index.mjs',
-  'client.js',
-  'src/hook/hooks.json',
-  'src/hook/run.mjs',
-  'src/hook/checker.py',
-  'src/policy/defaults.json',
-  'skill/SKILL.md',
-  'skill/references/docker-compose.md',
-]
+	manifest.dsh?.bundle?.patch,
+	"src/host/index.mjs",
+	"client.js",
+	"src/hook/hooks.json",
+	"src/hook/run.mjs",
+	"src/hook/checker.py",
+	"src/policy/defaults.json",
+	"src/policy/tools.json",
+	"scripts/provision-tools.mjs",
+	"skill/SKILL.md",
+	"skill/references/docker-compose.md",
+];
 for (const relative of required) {
-  if (typeof relative !== 'string' || !existsSync(join(root, relative))) throw new Error(`missing package asset: ${relative}`)
+	if (typeof relative !== "string" || !existsSync(join(root, relative)))
+		throw new Error(`missing package asset: ${relative}`);
 }
-console.log('coding-doc-standard: bundle assets are complete')
+console.log("coding-doc-standard: bundle assets are complete");

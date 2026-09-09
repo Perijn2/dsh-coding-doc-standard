@@ -1,0 +1,27 @@
+{
+	"ruff": {
+		"version": "0.16.6",
+		"source": "PyPI",
+		"install": "python -m pip install --target <dsh-data>/tools/ruff-0.16.6 ruff==0.16.6"
+	},
+	"biome": {
+		"package": "@biomejs/biome",
+		"version": "2.5.12",
+		"source": "npm"
+	},
+	"prettier": {
+		"package": "prettier",
+		"version": "3.9.6",
+		"source": "npm"
+	},
+	"doxygen": {
+		"version": "1.18.0",
+		"source": "official GitHub release",
+		"scope": "Windows x64 native DSH-managed installation",
+		"asset": {
+			"url": "https://github.com/doxygen/doxygen/releases/download/Release_1_18_0/doxygen-1.18.0.windows.x64.bin.zip",
+			"sha256": "e84f54cfd49ef06b0b16536056dbec0c496323de28abcce53a4269463de35eaf",
+			"executable": "doxygen.exe"
+		}
+	}
+}
