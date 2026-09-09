@@ -1,0 +1,14 @@
+{
+  "PreToolUse": [
+    {
+      "matcher": "write|edit",
+      "hooks": [
+        {
+          "type": "command",
+          "command": "node ${CLAUDE_PLUGIN_ROOT}/src/hook/run.mjs",
+          "timeout": 10
+        }
+      ]
+    }
+  ]
+}
