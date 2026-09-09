@@ -1,5 +1,6 @@
 node_modules/
 coverage/
+tests/fixtures/cpp-doxygen/build/
 .DS_Store
 *.pyc
 __pycache__/

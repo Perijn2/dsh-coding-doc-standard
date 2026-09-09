@@ -1,0 +1,5 @@
+# Normalize line endings so the working tree matches the LF index and Biome.
+* text=auto eol=lf
+*.png binary
+*.zip binary
+*.exe binary
