@@ -32,6 +32,27 @@ on Unix hosts, and confirms `doxygen --version` reports the pinned version.
 `src/policy/platform.mjs`, so provisioning and verification cannot disagree about
 which binary is installed.
 
+### Verified Linux host requirements
+
+Extracted from the pinned `1.18.0` Linux binary (`.gnu.version_r` and
+`DT_NEEDED`) and checked against the current Arch Linux package database:
+
+| Binary requirement | Arch / CachyOS package | Satisfied |
+| --- | --- | --- |
+| `libc.so.6` >= 2.34 | glibc 2.44 | yes |
+| `libm.so.6` >= 2.29 | glibc 2.44 | yes |
+| `libstdc++.so.6` >= 3.4.30 | gcc-libs 16.2.1 | yes |
+| `libgcc_s.so.1` >= 3.4 | gcc-libs 16.2.1 | yes |
+| `libz.so.1` >= 1.2.0 | zlib 1.3.2 | yes |
+| `libtinfo.so.6` (ncurses 6) | ncurses 6.6 | yes |
+| `/lib64/ld-linux-x86-64.so.2` | filesystem: `lib64 -> usr/lib` | yes |
+| `tar` for extraction | base | yes |
+
+Arch Linux and CachyOS are glibc distributions that meet every requirement above,
+so `npm run provision-tools` installs the pinned binary there without changes. A
+host whose glibc is older than 2.34, or whose `libstdc++` predates GCC 11, fails
+the `doxygen --version` check at provisioning time rather than later.
+
 ### Unsupported hosts
 
 The official 1.18.0 release publishes no Linux arm64 and no musl/Alpine build;
