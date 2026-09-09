@@ -17,6 +17,8 @@
 window.__ModuleLoader__.load({
 	id: "coding-doc-standard",
 	factory: (require) => {
+		const module = { exports: {} };
+		const exports = module.exports;
 		const React = require("react");
 		const documentationFields = [
 			[
@@ -164,26 +166,25 @@ window.__ModuleLoader__.load({
 			);
 		}
 
-		return {
-			name: "coding-doc-standard",
-			inject: ["slots", "settingsScope"],
-			apply: (ctx) => {
-				const scope = ctx.settingsScope.bind({
-					namespace: "coding-doc-standard",
-				});
-				ctx.slots.inject("settings.section", () =>
-					ctx.slots.register(
-						{
-							name: "settings.section",
-							id: "coding-doc-standard",
-							order: 24,
-							label: () => "Coding Documentation Standard",
-							inject: () => ({ scope }),
-						},
-						Settings,
-					),
-				);
-			},
+		exports.name = "coding-doc-standard";
+		exports.inject = ["slots", "settingsScope"];
+		exports.apply = (ctx) => {
+			const scope = ctx.settingsScope.bind({
+				namespace: "coding-doc-standard",
+			});
+			ctx.slots.inject("settings.section", () =>
+				ctx.slots.register(
+					{
+						name: "settings.section",
+						id: "coding-doc-standard",
+						order: 24,
+						label: () => "Coding Documentation Standard",
+						inject: () => ({ scope }),
+					},
+					Settings,
+				),
+			);
 		};
+		return module.exports;
 	},
 });
