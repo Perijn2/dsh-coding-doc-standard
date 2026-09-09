@@ -21,7 +21,9 @@ fails closed by default when a required pinned formatter is absent.
 
 The native DSH-managed Doxygen installation currently targets Windows x64. It is
 downloaded only from the official `Release_1_18_0` archive and its SHA-256 is
-verified before extraction. Run project-level documentation checks with:
+verified before extraction. Other platforms retain the formatter profiles but
+report Doxygen as unavailable; see `docs/platform-support.md`. Run project-level
+documentation checks with:
 
 ```text
 node scripts/verify.mjs --doxygen path/to/Doxyfile
