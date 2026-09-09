@@ -14,6 +14,7 @@
  *   Worked example: The bundle patch inserts this package as coding-doc-standard.
  */
 
+import { randomUUID } from "node:crypto";
 import { existsSync } from "node:fs";
 import { mkdir, readFile, rename, writeFile } from "node:fs/promises";
 import { homedir } from "node:os";
@@ -55,7 +56,7 @@ export async function loadPolicy() {
  */
 export async function savePolicy(policy) {
 	const directory = dirname(statePath);
-	const temporary = `${statePath}.tmp`;
+	const temporary = `${statePath}.${process.pid}.${randomUUID()}.tmp`;
 	await mkdir(directory, { recursive: true });
 	await writeFile(temporary, `${JSON.stringify(policy, null, 2)}\n`, "utf8");
 	await rename(temporary, statePath);
@@ -64,7 +65,8 @@ export async function savePolicy(policy) {
 async function installSettings(ctx, policy) {
 	try {
 		const settings = await import("@deepseek-ai/dsh-settings");
-		const schemaTools = await import("@deepseek-ai/schemastery");
+		const schemaModule = await import("@deepseek-ai/schemastery");
+		const schemaTools = schemaModule.default ?? schemaModule;
 		if (
 			typeof settings.installSettingsSection !== "function" ||
 			typeof settings.settingsNamespace !== "function"
