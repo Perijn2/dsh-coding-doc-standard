@@ -21,8 +21,13 @@
 import { spawnSync } from "node:child_process";
 import { existsSync, readFileSync } from "node:fs";
 import { homedir } from "node:os";
-import { basename, dirname, extname, join } from "node:path";
+import { basename, dirname, extname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
+import {
+	platformKey,
+	resolveDoxygenBinary,
+	supportedDoxygenPlatforms,
+} from "../src/policy/platform.mjs";
 
 const root = dirname(dirname(fileURLToPath(import.meta.url)));
 const tools = JSON.parse(
@@ -41,15 +46,14 @@ const composeNames = new Set([
 	"docker-compose.yaml",
 	"docker-compose.yml",
 ]);
-const doxygenBinary = join(
+const toolsRoot = join(
 	homedir(),
 	".dsh",
 	"plugins",
 	"coding-doc-standard",
 	"tools",
-	`doxygen-${tools.doxygen.version}`,
-	tools.doxygen.asset.executable,
 );
+const doxygenBinary = resolveDoxygenBinary(toolsRoot, tools.doxygen);
 
 /**
  * Runs one external verifier and handles missing tools consistently.
@@ -114,12 +118,18 @@ function verifyDoxygen(path) {
 	if (!path) throw new Error("--doxygen requires a Doxyfile path");
 	if (!existsSync(path)) throw new Error(`Doxyfile does not exist: ${path}`);
 	verifyDoxygenConfiguration(path);
-	if (!existsSync(doxygenBinary)) {
+	if (!doxygenBinary) {
 		throw new Error(
-			`pinned Doxygen ${tools.doxygen.version} is unavailable; run npm run provision-tools`,
+			`no pinned Doxygen ${tools.doxygen.version} asset for ${platformKey()}; supported: ${supportedDoxygenPlatforms(tools.doxygen).join(", ")}`,
 		);
 	}
-	execute(doxygenBinary, [path], dirname(path));
+	if (!existsSync(doxygenBinary)) {
+		throw new Error(
+			`pinned Doxygen ${tools.doxygen.version} is unavailable on ${platformKey()}; run npm run provision-tools`,
+		);
+	}
+	const config = resolve(path);
+	execute(doxygenBinary, [config], dirname(config));
 }
 
 if (doxygenIndex !== -1) verifyDoxygen(doxygenFile);

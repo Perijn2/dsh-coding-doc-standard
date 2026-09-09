@@ -29,6 +29,7 @@ const required = [
 	"src/hook/checker.py",
 	"src/policy/defaults.json",
 	"src/policy/tools.json",
+	"src/policy/platform.mjs",
 	"scripts/provision-tools.mjs",
 	"scripts/verify-dsh-contract.mjs",
 	"skill/SKILL.md",
