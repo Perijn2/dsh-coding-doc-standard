@@ -13,4 +13,4 @@
  *   Worked example: The web plugin roster requests /plugins/coding-doc-standard/client.js.
  */
 
-import './src/client/index.js'
+import "./src/client/index.js";
