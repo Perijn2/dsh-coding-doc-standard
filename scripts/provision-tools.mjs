@@ -105,9 +105,10 @@ function provisionRuff() {
 
 async function provisionDoxygen() {
 	if (process.platform !== "win32" || process.arch !== "x64") {
-		throw new Error(
-			`native Doxygen ${doxygenVersion} provisioning currently supports Windows x64 only`,
+		console.warn(
+			`coding-doc-standard: native Doxygen ${doxygenVersion} is unavailable on ${process.platform}/${process.arch}`,
 		);
+		return;
 	}
 	if (!existsSync(doxygenBinary)) {
 		const response = await fetch(toolManifest.doxygen.asset.url);
