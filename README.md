@@ -9,9 +9,12 @@ analysis checks for `verify`.
 ## Design
 
 The package manifest declares `dsh.bundle.patch`, which points to
-`bundle.patch.yml`. That patch is the only Cordis loader registration. The
-installer installs the package link and machine-wide skill, but **never changes a
-profile's `cordis.patch.yml`**.
+`bundle.patch.yml`. That patch is the only Cordis loader content this package
+supplies. Registration itself belongs to `dsh plugin`, which owns the dependency
+spec, the lockfile, the installed package link, and the profile's ordered
+`dsh.profile.bundles` entry. This package's installer provisions the pinned
+toolchain and the machine-wide skill only — it writes no package link and
+**never changes a profile's `cordis.patch.yml`**.
 
 ```text
 bundle.patch.yml → host plugin → hooks bridge → Node candidate adapter → Python checker
@@ -33,15 +36,28 @@ require `x-...` extension fields for prose.
 
 ## Install
 
+Register the bundle with the supported DSH mechanism. It runs pnpm in the profile
+directory and then reconciles `dsh.profile.bundles`, so the dependency spec, the
+lockfile, the installed package link, and the loader registration all agree:
+
+```text
+dsh plugin --profile web add .
+```
+
+Relative path specs are anchored to the directory you invoke `dsh plugin` from,
+not to the profile directory, so `add .` from this checkout links this package
+rather than self-linking the profile.
+
+Then provision the pinned toolchain and the machine-wide skill:
+
 ```text
 node scripts/verify-install.mjs
-npm run provision-tools
 node scripts/install.mjs
 ```
 
-Restart DSH after installation so bundle discovery occurs during profile boot.
-Use `node scripts/install.mjs --dry-run` to preview installation. The installer
-makes no profile-patch edits.
+Restart DSH after installation so the bundle's patch layer is composed during
+profile boot. Use `node scripts/install.mjs --dry-run` to preview its mutations.
+Neither step edits a profile's `cordis.patch.yml`.
 
 ## Verify
 
