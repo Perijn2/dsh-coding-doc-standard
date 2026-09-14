@@ -4,3 +4,7 @@ tests/fixtures/cpp-doxygen/build/
 .DS_Store
 *.pyc
 __pycache__/
+
+# Local manual enforcement probes
+/hook-*-test.*
+/rust-prewrite-demo.rs
