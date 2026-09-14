@@ -83,8 +83,25 @@ test("selects only pinned fast formatter profiles", () => {
 	assert.equal(formatterProfile("example.py", policy), "python");
 	assert.equal(formatterProfile("example.ts", policy), "typescriptJavascript");
 	assert.equal(formatterProfile("compose.yaml", policy), "dockerCompose");
-	assert.equal(formatterProfile("example.rs", policy), null);
+	assert.equal(
+		formatterProfile("example.rs", { ...policy, formatRust: false }),
+		null,
+	);
+	assert.equal(
+		formatterProfile("example.rs", { ...policy, formatRust: true }),
+		"rust",
+	);
 	assert.equal(formatterProfile("example.cpp", policy), null);
+});
+
+test("accepts a rustfmt-formatted Rust candidate when the opt-in profile is enabled", async () => {
+	assert.equal(
+		await checkFormatting(
+			{ path: "example.rs", content: "fn main() {}\n" },
+			{ ...loadPolicy(), formatRust: true, blockOnMissingFormatter: false },
+		),
+		null,
+	);
 });
 
 test("blocks a Python candidate that Ruff would reformat", async () => {

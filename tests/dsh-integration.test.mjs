@@ -6,7 +6,7 @@
  * @remarks
  * Usage:
  *   Core principle: Exercise the real Cordis context, settings installer, and
- *   Claude Code hooks bridge instead of hand-wired stand-ins.
+ *   native global guard instead of hand-wired stand-ins.
  *   Setup: Run with Node's built-in test runner from the package root.
  *   Workflow: Mount the host plugin, assert settings registration and durable
  *   persistence, then drive tool interception through the real bridge.
@@ -15,7 +15,6 @@
  */
 
 import assert from "node:assert/strict";
-import { spawnSync } from "node:child_process";
 import { mkdtemp, readFile, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
@@ -39,6 +38,7 @@ const POLICY_KEYS = [
 	"formatOnWrite",
 	"formatPython",
 	"formatTypescriptJavascript",
+	"formatRust",
 	"formatDockerCompose",
 	"blockOnMissingFormatter",
 ];
@@ -95,24 +95,38 @@ function createSettingsStub() {
 }
 
 /**
- * Builds a shell service stub that runs hook commands through child processes.
+ * Builds a command registry stub that retains plugin command definitions.
  *
- * @returns {object} Stub exposing resolve and run for the hook protocol runner.
+ * @returns {{registrations: object[], register: (definition: object) => () => void}} Command registry stub.
  */
-function createShellStub() {
+function createCommandsStub() {
+	const registrations = [];
 	return {
-		resolve: (request) => request,
-		run: async (request) => {
-			const [program, ...args] = request.command.split(" ");
-			const result = spawnSync(program, args, {
-				input: request.stdin,
-				encoding: "utf8",
-				...(request.workdir ? { cwd: request.workdir } : {}),
-			});
-			return {
-				exitCode: result.status ?? 1,
-				stdout: { text: result.stdout ?? "" },
-				stderr: { text: result.stderr ?? "" },
+		registrations,
+		register: (definition) => {
+			registrations.push(definition);
+			return () => {
+				const index = registrations.indexOf(definition);
+				if (index !== -1) registrations.splice(index, 1);
+			};
+		},
+	};
+}
+
+/**
+ * Captures native global tool guards registered by the host plugin.
+ *
+ * @returns {{guards: Function[], guard: (guard: Function) => () => void}} Guard registry stub.
+ */
+function createToolsStub() {
+	const guards = [];
+	return {
+		guards,
+		guard(guard) {
+			guards.push(guard);
+			return () => {
+				const index = guards.indexOf(guard);
+				if (index !== -1) guards.splice(index, 1);
 			};
 		},
 	};
@@ -159,8 +173,15 @@ async function readDurablePolicy() {
 const { Context } = await import("@deepseek-ai/cordis");
 const cordis = new Context();
 const settings = createSettingsStub();
+const commands = createCommandsStub();
+const tools = createToolsStub();
+const hookAgent = {
+	id: "agent-integration",
+	session: { header: { id: "session-integration", cwd: root } },
+};
 cordis.provide("settings", settings);
-cordis.provide("shell", createShellStub());
+cordis.provide("commands", commands);
+cordis.provide("tools", tools);
 
 const hostModule = await import(
 	pathToFileURL(join(root, "src", "host", "index.mjs")).href
@@ -182,6 +203,33 @@ test("registers the coding-doc-standard settings namespace with the full schema"
 	assert.deepEqual(schemaKeys.sort(), [...POLICY_KEYS].sort());
 });
 
+test("registers the workspace verifier as a DSH command", async () => {
+	const command = await waitFor(
+		async () => commands.registrations[0] ?? null,
+		"command registration",
+	);
+	assert.equal(command.name, "coding-doc-verify");
+	assert.match(command.description, /verification/i);
+	assert.equal(
+		command.input.hint,
+		"[paths…] [--optional] [--doxygen Doxyfile]",
+	);
+	assert.equal(typeof command.handler, "function");
+});
+
+test("runs the workspace verifier through the DSH command handler", async () => {
+	const command = await waitFor(
+		async () => commands.registrations[0] ?? null,
+		"command registration",
+	);
+	const result = await command.handler({
+		rawInput: "",
+		agent: { session: { header: { cwd: root } } },
+		signal: new AbortController().signal,
+	});
+	assert.equal(result.kind, "success", result.text);
+});
+
 test("persists the effective policy and follows settings changes", async () => {
 	const initial = await waitFor(readDurablePolicy, "durable policy file");
 	assert.equal(initial.formatOnWrite, true);
@@ -195,28 +243,21 @@ test("persists the effective policy and follows settings changes", async () => {
 });
 
 /**
- * Drives one PreToolUse interception through the real hooks bridge.
+ * Evaluates the registered global native guards for one pending tool execution.
  *
- * @param {string} toolName - Tool name to dispatch on the extension point.
- * @param {Record<string, unknown>} toolInput - Tool input for the hook payload.
- * @returns {Promise<any>} The extension point result.
+ * @param {object} agent - Agent associated with the execution.
+ * @param {string} toolName - Tool name to evaluate.
+ * @param {Record<string, unknown>} toolInput - Tool input for the candidate validator.
+ * @returns {{kind: 'allow'} | {kind: 'deny', reason: string}} Native guard outcome.
  */
-async function preExecute(toolName, toolInput) {
-	return cordis.events.waterfall(
-		cordis,
-		"tools/pre-execute",
-		{
-			name: toolName,
-			arguments: toolInput,
-			callId: "call-integration",
-			signal: undefined,
-		},
-		async () => ({ kind: "allow" }),
-	);
+function preExecute(agent, toolName, toolInput) {
+	const execution = { agent, arguments: toolInput, name: toolName };
+	const reason = tools.guards.map((guard) => guard(execution)).find(Boolean);
+	return reason ? { kind: "deny", reason } : { kind: "allow" };
 }
 
-test("blocks an undocumented TypeScript write through the real bridge", async () => {
-	const result = await preExecute("write", {
+test("blocks an undocumented namespaced TypeScript write through the native guard", async () => {
+	const result = await preExecute(hookAgent, "functions.write", {
 		file_path: "src/undocumented.ts",
 		content: UNDOCUMENTED_TS,
 	});
@@ -224,16 +265,28 @@ test("blocks an undocumented TypeScript write through the real bridge", async ()
 	assert.match(String(result.reason), /doc-standard/);
 });
 
-test("allows a documented and formatted TypeScript write", async () => {
-	const result = await preExecute("write", {
+test("allows a documented and formatted namespaced TypeScript write", async () => {
+	const result = await preExecute(hookAgent, "functions.write", {
 		file_path: "src/integration-example.ts",
 		content: COMPLIANT_TS,
 	});
 	assert.equal(result.kind, "allow");
 });
 
+test("applies the global guard to every agent identity", () => {
+	const secondAgent = {
+		id: "agent-integration-second",
+		session: { header: { id: "session-integration-second", cwd: root } },
+	};
+	const result = preExecute(secondAgent, "functions.write", {
+		file_path: "src/second-undocumented.ts",
+		content: UNDOCUMENTED_TS,
+	});
+	assert.equal(result.kind, "deny");
+});
+
 test("does not intercept tools outside the write and edit matcher", async () => {
-	const result = await preExecute("read", {
+	const result = await preExecute(hookAgent, "read", {
 		file_path: "src/undocumented.ts",
 	});
 	assert.equal(result.kind, "allow");

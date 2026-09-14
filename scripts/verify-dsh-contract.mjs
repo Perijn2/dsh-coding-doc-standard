@@ -28,8 +28,9 @@ const requiredPeers = [
 	"@deepseek-ai/dsh-client-runtime",
 	"@deepseek-ai/dsh-client-ui-settings",
 	"@deepseek-ai/dsh-client-ui-settings-plugins",
-	"@deepseek-ai/dsh-hooks-claude-code",
+	"@deepseek-ai/dsh-commands",
 	"@deepseek-ai/dsh-settings",
+	"@deepseek-ai/dsh-tools",
 	"@deepseek-ai/schemastery",
 ];
 
@@ -44,7 +45,7 @@ for (const peer of requiredPeers) {
 }
 
 const settings = await import("@deepseek-ai/dsh-settings");
-const hooks = await import("@deepseek-ai/dsh-hooks-claude-code");
+const tools = await import("@deepseek-ai/dsh-tools");
 if (
 	typeof settings.installSettingsSection !== "function" ||
 	typeof settings.settingsNamespace !== "function"
@@ -53,8 +54,8 @@ if (
 		"installed dsh-settings lacks the required section-registration API",
 	);
 }
-if (typeof hooks.apply !== "function") {
-	throw new Error("installed hooks bridge lacks apply()");
+if (typeof tools.ToolRuntime !== "function") {
+	throw new Error("installed dsh-tools lacks ToolRuntime");
 }
 await import(pathToFileURL(join(root, "src", "host", "index.mjs")).href);
 

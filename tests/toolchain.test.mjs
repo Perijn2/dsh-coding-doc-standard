@@ -100,21 +100,32 @@ test("enables only provisionable fast formatters on write by default", () => {
 	assert.equal(policy.formatOnWrite, true);
 	assert.equal(policy.formatPython, true);
 	assert.equal(policy.formatTypescriptJavascript, true);
+	assert.equal(policy.formatRust, false);
 	assert.equal(policy.formatDockerCompose, true);
 	assert.equal(policy.blockOnMissingFormatter, true);
 	assert.equal(policy.formatters.rust, undefined);
 	assert.equal(policy.formatters.cCpp, undefined);
 });
 
-test("renders formatter controls in the settings card", () => {
+test("registers formatter controls in the dedicated settings navigation item", () => {
 	for (const field of [
 		"formatOnWrite",
 		"formatPython",
 		"formatTypescriptJavascript",
+		"formatRust",
 		"formatDockerCompose",
 		"blockOnMissingFormatter",
 	]) {
 		assert.ok(client.includes(field), `missing settings control: ${field}`);
 	}
 	assert.ok(client.includes("Pre-write formatter enforcement"));
+	assert.ok(client.includes("Documentation policy"));
+	assert.ok(client.includes("Fast formatters"));
+	assert.ok(client.includes("cds-settings-overview"));
+	assert.ok(client.includes("cds-settings-group"));
+	assert.ok(client.includes('ctx.slots.inject("settings.section"'));
+	assert.ok(client.includes('name: "settings.section"'));
+	assert.ok(client.includes("id: NS"));
+	assert.ok(client.includes("(listener) => scope.subscribe(listener)"));
+	assert.ok(client.includes("() => scope.getSnapshot()"));
 });

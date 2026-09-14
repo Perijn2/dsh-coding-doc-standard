@@ -6,8 +6,8 @@
  *
  * @remarks
  * Usage:
- *   Core principle: Fail early when an install cannot load its bundle, hook, or
- *   skill assets.
+ *   Core principle: Fail early when an install cannot load its bundle, validator,
+ *   or skill assets.
  *   Setup: Run after packaging or before linking into a DSH package root.
  *   Workflow: Load package metadata and assert that each declared runtime asset exists.
  *   API guide: The script exits nonzero with a concise missing-asset error.
@@ -24,7 +24,6 @@ const required = [
 	manifest.dsh?.bundle?.patch,
 	"src/host/index.mjs",
 	"client.js",
-	"src/hook/hooks.json",
 	"src/hook/run.mjs",
 	"src/hook/checker.py",
 	"src/policy/defaults.json",

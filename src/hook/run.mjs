@@ -7,8 +7,8 @@
  * Usage:
  *   Core principle: Validate exactly the candidate text a write or edit would
  *   create, never stale disk content or formatter-mutated files.
- *   Setup: Configure this file as the command entry in the hooks bridge and run
- *   the package tool provisioning command before enabling formatting.
+ *   Setup: The native DSH guard invokes this file with a pending tool payload;
+ *   provision package tools before enabling formatting.
  *   Workflow: Parse a tool payload, build its candidate, check its pinned
  *   formatter, then invoke the Python documentation checker.
  *   API guide: Use candidateFromPayload and checkFormatting in integration tests;
@@ -83,7 +83,7 @@ export async function candidateFromPayload(payload) {
  *
  * @param {string} path - Candidate filesystem path.
  * @param {Record<string, unknown>} policy - Effective policy.
- * @returns {'python' | 'typescriptJavascript' | 'dockerCompose' | null} Formatter profile.
+ * @returns {'python' | 'typescriptJavascript' | 'rust' | 'dockerCompose' | null} Formatter profile.
  */
 export function formatterProfile(path, policy) {
 	if (!policy.formatOnWrite) return null;
@@ -95,6 +95,7 @@ export function formatterProfile(path, policy) {
 		policy.formatTypescriptJavascript
 	)
 		return "typescriptJavascript";
+	if (extension === ".rs" && policy.formatRust) return "rust";
 	const patterns = policy.composePatterns ?? [];
 	if (
 		policy.formatDockerCompose &&
@@ -117,11 +118,18 @@ function ruffExecutable() {
 	return join(durableRoot, "tools", `ruff-${ruffVersion}`, "bin", name);
 }
 
-function execute(command, args, content) {
+function execute(
+	command,
+	args,
+	content,
+	cwd,
+	shell = process.platform === "win32",
+) {
 	return new Promise((resolve) => {
 		const child = spawn(command, args, {
+			cwd,
 			stdio: ["pipe", "pipe", "pipe"],
-			shell: process.platform === "win32",
+			shell,
 		});
 		let stdout = "";
 		let stderr = "";
@@ -165,6 +173,22 @@ export async function checkFormatting(candidate, policy = loadPolicy()) {
 		);
 		if (result.code === 0) return null;
 		return `[doc-standard] Python code must match Ruff ${ruffVersion}. ${result.stderr.trim()}`.trim();
+	}
+	if (profile === "rust") {
+		const command = process.platform === "win32" ? "rustfmt.exe" : "rustfmt";
+		const result = await execute(
+			command,
+			["--emit", "stdout"],
+			candidate.content,
+			dirname(resolve(candidate.path)),
+			false,
+		);
+		if (result.error?.code === "ENOENT") return unavailable("rustfmt");
+		if (result.code !== 0)
+			return `[doc-standard] rustfmt could not format ${candidate.path}. ${result.stderr.trim()}`.trim();
+		return result.stdout === candidate.content
+			? null
+			: `[doc-standard] ${candidate.path} must match rustfmt formatting.`;
 	}
 	const command = executable(
 		profile === "typescriptJavascript" ? "biome" : "prettier",

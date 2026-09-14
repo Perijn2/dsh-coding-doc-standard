@@ -17,7 +17,7 @@ toolchain and the machine-wide skill only — it writes no package link and
 **never changes a profile's `cordis.patch.yml`**.
 
 ```text
-bundle.patch.yml → host plugin → hooks bridge → Node candidate adapter → Python checker
+bundle.patch.yml → host plugin → native global tool guard → Node candidate adapter → Python checker
                                       └──────→ durable policy in ~/.dsh/plugins/
 ```
 
@@ -25,7 +25,7 @@ bundle.patch.yml → host plugin → hooks bridge → Node candidate adapter →
 
 - Python: Ruff formatting and linting in detailed verification.
 - TypeScript / JavaScript: Biome by default, or project-owned ESLint + Prettier.
-- Rust: rustfmt and Clippy.
+- Rust: opt-in pre-write rustfmt, plus Clippy during detailed verification.
 - C / C++: pinned Doxygen 1.18.0 project-level documentation verification, plus
   project-provided clang-format and clang-tidy.
 - Docker Compose: comment-header documentation, pinned Prettier 3.9.6 before

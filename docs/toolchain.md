@@ -4,13 +4,16 @@ Author: Perijn Huijser
 
 ## Pre-write formatters
 
-The hook uses only fast, deterministic formatters that can process pending content
-without rewriting the target file.
+The hook uses fast, deterministic formatters that can process pending content
+without rewriting the target file. Rust uses the project-provided `rustfmt` when
+its opt-in pre-write setting is enabled; Clippy remains detailed-only because it
+requires crate and dependency context.
 
 | Profile | Tool | Exact version | Distribution |
 |---|---|---:|---|
 | Python | Ruff | `0.16.6` | PyPI, installed under `~/.dsh/plugins/coding-doc-standard/tools/` |
 | TypeScript / JavaScript | `@biomejs/biome` | `2.5.12` | Production npm dependency |
+| Rust (opt-in) | `rustfmt` | Project toolchain | Installed and selected by the project |
 | Docker Compose | Prettier | `3.9.6` | Production npm dependency |
 | C / C++ detailed verification | Doxygen | `1.18.0` | Official GitHub archive, SHA-256 verified, Windows x64 |
 
