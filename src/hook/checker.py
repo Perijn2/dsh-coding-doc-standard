@@ -49,6 +49,9 @@ SOURCE_EXTENSIONS = {
     ".rb",
     ".swift",
     ".dart",
+    ".hs",
+    ".lua",
+    ".scala",
 }
 COMPOSE_DEFAULTS = (
     "compose.yaml",
@@ -255,6 +258,37 @@ def _go_source_header(text: str) -> str:
     return "\n".join(header)
 
 
+def _haskell_source_header(text: str) -> str:
+    """Summary: Extracts a supported Haskell module documentation header.
+
+    Parameters:
+        text: Complete candidate Haskell source content.
+
+    Returns:
+        Module documentation lines, or an empty string when none is found.
+    """
+
+    lines = text.removeprefix("\ufeff").splitlines()
+    index = 0
+    while index < len(lines) and re.fullmatch(r"\{\-# LANGUAGE .+ #\-\}", lines[index]):
+        index += 1
+        while index < len(lines) and not lines[index].strip():
+            index += 1
+    if index >= len(lines) or not lines[index].startswith("-- |"):
+        return ""
+    header: list[str] = []
+    while index < len(lines) and lines[index].startswith("--"):
+        header.append(lines[index][2:].lstrip(" |"))
+        index += 1
+    if (
+        not header
+        or index >= len(lines)
+        or not re.match(r"module\s+[A-Z][\w.']*\s+where\b", lines[index])
+    ):
+        return ""
+    return "\n".join(header)
+
+
 def _source_header(path: str, text: str) -> str:
     """Summary: Extracts a language-native leading documentation header.
 
@@ -269,6 +303,8 @@ def _source_header(path: str, text: str) -> str:
     suffix = Path(path).suffix.lower()
     if suffix == ".go":
         return _go_source_header(text)
+    if suffix == ".hs":
+        return _haskell_source_header(text)
     if suffix == ".py":
         match = re.match(
             r"(?:\ufeff)?(?:#![^\n]*\n)?(?:[ \t]*#.*coding[:=][ \t]*[-\w.]+[^\n]*\n)?\s*(?:[rubfRUBF]{0,2})?(?:'''|\"\"\")(.*?)(?:'''|\"\"\")",
@@ -277,7 +313,7 @@ def _source_header(path: str, text: str) -> str:
         )
     elif suffix in {".ts", ".js", ".mjs", ".cjs"}:
         match = re.match(r"(?:\ufeff)?(?:#![^\n]*\n)?\s*/\*\*(.*?)\*/", text, re.S)
-    elif suffix in {".c", ".h", ".cc", ".cpp", ".hpp", ".java", ".kt"}:
+    elif suffix in {".c", ".h", ".cc", ".cpp", ".hpp", ".java", ".kt", ".scala"}:
         match = re.match(r"(?:\ufeff)?\s*/\*\*(.*?)\*/", text, re.S)
     elif suffix == ".php":
         match = re.match(
@@ -293,6 +329,8 @@ def _source_header(path: str, text: str) -> str:
             text,
             re.I,
         )
+    elif suffix == ".lua":
+        match = re.match(r"(?:\ufeff)?\s*((?:---.*\n?)+)", text)
     elif suffix == ".rs":
         match = re.match(r"\s*((?://!.*\n?)+)", text)
     else:
@@ -376,11 +414,14 @@ def check_content(path: str, text: str, policy: dict | None = None) -> list[Viol
         ".rb": "ruby",
         ".swift": "swift",
         ".dart": "dart",
+        ".hs": "haskell",
+        ".lua": "lua",
+        ".scala": "scala",
     }.get(suffix, "cCpp")
     if not effective["languages"].get(family, True):
         return []
     header = _source_header(path, text)
-    if family in {"python", "go", "shell", "ruby", "swift", "dart"}:
+    if family in {"python", "go", "shell", "ruby", "swift", "dart", "haskell", "lua"}:
         violations = _require_labels(path, header, ("Author:", "Summary:", "Usage:"))
     elif family in {
         "typescriptJavascript",
@@ -389,6 +430,7 @@ def check_content(path: str, text: str, policy: dict | None = None) -> list[Viol
         "java",
         "kotlin",
         "php",
+        "scala",
     }:
         violations = _require_labels(path, header, ("@author", "Usage:"))
     else:

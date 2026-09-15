@@ -87,6 +87,21 @@ window.__ModuleLoader__.load({
 				"Dart (experimental)",
 				"Opt-in conservative leading-header validation only; no formatter runs.",
 			],
+			[
+				"haskell",
+				"Haskell (experimental)",
+				"Opt-in conservative leading-header validation only; no formatter runs.",
+			],
+			[
+				"lua",
+				"Lua (experimental)",
+				"Opt-in conservative leading-header validation only; no formatter runs.",
+			],
+			[
+				"scala",
+				"Scala (experimental)",
+				"Opt-in conservative leading-header validation only; no formatter runs.",
+			],
 		];
 		const formatterFields = [
 			[

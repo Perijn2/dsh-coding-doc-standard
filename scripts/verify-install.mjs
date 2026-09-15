@@ -46,6 +46,9 @@ const required = [
 	"skill/references/ruby.md",
 	"skill/references/swift.md",
 	"skill/references/dart.md",
+	"skill/references/haskell.md",
+	"skill/references/lua.md",
+	"skill/references/scala.md",
 ];
 for (const relative of required) {
 	if (typeof relative !== "string" || !existsSync(join(root, relative)))

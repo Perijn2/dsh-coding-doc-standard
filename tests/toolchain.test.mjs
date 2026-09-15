@@ -115,6 +115,9 @@ test("enables only provisionable fast formatters on write by default", () => {
 		"ruby",
 		"swift",
 		"dart",
+		"haskell",
+		"lua",
+		"scala",
 	]) {
 		assert.equal(policy.languages[language], false, `${language}: disabled`);
 		assert.equal(

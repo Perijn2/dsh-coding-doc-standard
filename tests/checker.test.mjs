@@ -41,6 +41,9 @@ for (const language of [
 	"ruby",
 	"swift",
 	"dart",
+	"haskell",
+	"lua",
+	"scala",
 ])
 	enabledPolicy.languages[language] = true;
 writeFileSync(enabledPolicyPath, `${JSON.stringify(enabledPolicy)}\n`, "utf8");
@@ -248,6 +251,33 @@ struct Example {}
 class Example {}
 `,
 	],
+	[
+		"Example.hs",
+		`{-# LANGUAGE OverloadedStrings #-}
+
+-- | Author: Perijn Huijser
+-- Summary: Demonstrates a documented Haskell module.
+-- Usage: Import the module from a supported caller.
+module Example where
+`,
+	],
+	[
+		"example.lua",
+		`--- Author: Perijn Huijser
+--- Summary: Demonstrates a documented Lua module.
+--- Usage: Require the module from a supported caller.
+return {}
+`,
+	],
+	[
+		"Example.scala",
+		`/**
+ * @author Perijn Huijser
+ * Usage: Demonstrates a documented Scala source file.
+ */
+object Example
+`,
+	],
 ];
 
 test("accepts enabled first-batch language headers", () => {
@@ -389,6 +419,50 @@ test("rejects unsupported PHP, Ruby, Swift, and Dart preambles when enabled", ()
 		check(
 			"example.dart",
 			`import "dart:core";\n${slash}class Example {}\n`,
+			enabledPolicyPath,
+		),
+		2,
+	);
+});
+
+test("rejects unsupported Haskell, Lua, and Scala preambles when enabled", () => {
+	const haskell = `-- | Author: Perijn Huijser
+-- Summary: Documents a Haskell module.
+-- Usage: Import the module from a caller.
+module Example where
+`;
+	const lua = `--- Author: Perijn Huijser
+--- Summary: Documents a Lua module.
+--- Usage: Require the module from a caller.
+`;
+	const scala = `/**
+ * @author Perijn Huijser
+ * Usage: Documents a Scala source file.
+ */
+`;
+	assert.equal(check("Example.lhs", "value\n", enabledPolicyPath), 0);
+	assert.equal(check("example.luau", "value\n", enabledPolicyPath), 0);
+	assert.equal(check("Example.sc", "value\n", enabledPolicyPath), 0);
+	assert.equal(
+		check(
+			"Example.hs",
+			`{-# OPTIONS_GHC -Wall #-}\n${haskell}`,
+			enabledPolicyPath,
+		),
+		2,
+	);
+	assert.equal(
+		check("example.lua", `#!/usr/bin/env lua\n${lua}`, enabledPolicyPath),
+		2,
+	);
+	assert.equal(
+		check("example.lua", lua.replaceAll("---", "--"), enabledPolicyPath),
+		2,
+	);
+	assert.equal(
+		check(
+			"Example.scala",
+			`//> using scala "3.3.0"\n${scala}object Example\n`,
 			enabledPolicyPath,
 		),
 		2,

@@ -30,6 +30,9 @@ a multi-language task.
 | Ruby (experimental, opt-in, header-only) | [references/ruby.md](references/ruby.md) |
 | Swift (experimental, opt-in, header-only) | [references/swift.md](references/swift.md) |
 | Dart (experimental, opt-in, header-only) | [references/dart.md](references/dart.md) |
+| Haskell (experimental, opt-in, header-only) | [references/haskell.md](references/haskell.md) |
+| Lua (experimental, opt-in, header-only) | [references/lua.md](references/lua.md) |
+| Scala (experimental, opt-in, header-only) | [references/scala.md](references/scala.md) |
 
 ## The hard rule: establish facts or ask
 

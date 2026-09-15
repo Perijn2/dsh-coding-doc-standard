@@ -136,6 +136,9 @@ async function installSettings(ctx, policy) {
 			ruby: schemaTools.boolean().default(policy.languages.ruby),
 			swift: schemaTools.boolean().default(policy.languages.swift),
 			dart: schemaTools.boolean().default(policy.languages.dart),
+			haskell: schemaTools.boolean().default(policy.languages.haskell),
+			lua: schemaTools.boolean().default(policy.languages.lua),
+			scala: schemaTools.boolean().default(policy.languages.scala),
 			formatOnWrite: schemaTools.boolean().default(policy.formatOnWrite),
 			formatPython: schemaTools.boolean().default(policy.formatPython),
 			formatTypescriptJavascript: schemaTools
@@ -194,6 +197,9 @@ async function installSettings(ctx, policy) {
 							ruby: value.ruby,
 							swift: value.swift,
 							dart: value.dart,
+							haskell: value.haskell,
+							lua: value.lua,
+							scala: value.scala,
 						},
 					});
 				},

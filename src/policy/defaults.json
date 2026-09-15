@@ -14,7 +14,10 @@
 		"php": false,
 		"ruby": false,
 		"swift": false,
-		"dart": false
+		"dart": false,
+		"haskell": false,
+		"lua": false,
+		"scala": false
 	},
 	"formatOnWrite": true,
 	"formatPython": true,

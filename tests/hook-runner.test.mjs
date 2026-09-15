@@ -103,6 +103,9 @@ test("selects only pinned fast formatter profiles", () => {
 		"example.rb",
 		"Example.swift",
 		"example.dart",
+		"Example.hs",
+		"example.lua",
+		"Example.scala",
 	]) {
 		assert.equal(formatterProfile(path, policy), null, path);
 	}

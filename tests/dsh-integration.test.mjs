@@ -44,6 +44,9 @@ const POLICY_KEYS = [
 	"ruby",
 	"swift",
 	"dart",
+	"haskell",
+	"lua",
+	"scala",
 	"formatOnWrite",
 	"formatPython",
 	"formatTypescriptJavascript",
@@ -251,6 +254,9 @@ test("persists the effective policy and follows settings changes", async () => {
 		ruby: true,
 		swift: true,
 		dart: true,
+		haskell: true,
+		lua: true,
+		scala: true,
 	});
 	const updated = await waitFor(async () => {
 		const policy = await readDurablePolicy();
@@ -261,7 +267,10 @@ test("persists the effective policy and follows settings changes", async () => {
 			!policy.languages?.php ||
 			!policy.languages?.ruby ||
 			!policy.languages?.swift ||
-			!policy.languages?.dart
+			!policy.languages?.dart ||
+			!policy.languages?.haskell ||
+			!policy.languages?.lua ||
+			!policy.languages?.scala
 		)
 			return null;
 		return policy;
@@ -273,6 +282,9 @@ test("persists the effective policy and follows settings changes", async () => {
 	assert.equal(updated.languages.ruby, true);
 	assert.equal(updated.languages.swift, true);
 	assert.equal(updated.languages.dart, true);
+	assert.equal(updated.languages.haskell, true);
+	assert.equal(updated.languages.lua, true);
+	assert.equal(updated.languages.scala, true);
 	assert.equal(updated.enabled, true);
 });
 
@@ -338,6 +350,25 @@ test("enforces the opt-in PHP header through the native guard", async () => {
  * Usage: Demonstrates an opt-in PHP source header.
  */
 final class Example {}
+`,
+	});
+	assert.equal(documented.kind, "allow");
+});
+
+test("enforces the opt-in Haskell module header through the native guard", async () => {
+	const missing = await preExecute(hookAgent, "functions.write", {
+		file_path: "src/Example.hs",
+		content: "module Example where\n",
+	});
+	assert.equal(missing.kind, "deny");
+	const documented = await preExecute(hookAgent, "functions.write", {
+		file_path: "src/Example.hs",
+		content: `{-# LANGUAGE OverloadedStrings #-}
+
+-- | Author: Perijn Huijser
+-- Summary: Demonstrates an opt-in Haskell module header.
+-- Usage: Import the module from a supported caller.
+module Example where
 `,
 	});
 	assert.equal(documented.kind, "allow");

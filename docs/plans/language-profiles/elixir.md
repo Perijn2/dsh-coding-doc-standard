@@ -2,6 +2,14 @@
 
 Author: Perijn Huijser
 
+## Current rollout status
+
+Deferred from the header-only rollout. Elixir's native module documentation is
+`@moduledoc` inside `defmodule`, so a leading file-comment guard would invent a
+non-native contract and would not validate the documented module. Promote this
+plan only with an AST/module-aware implementation that defines `.ex` and `.exs`
+scope, `@moduledoc false`, and `@doc` coverage.
+
 ## Evidence
 
 Elixir's [writing-documentation guide](https://hexdocs.pm/elixir/writing-documentation.html)
