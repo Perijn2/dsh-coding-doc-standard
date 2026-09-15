@@ -42,6 +42,10 @@ const required = [
 	"skill/references/java.md",
 	"skill/references/kotlin.md",
 	"skill/references/shell.md",
+	"skill/references/php.md",
+	"skill/references/ruby.md",
+	"skill/references/swift.md",
+	"skill/references/dart.md",
 ];
 for (const relative of required) {
 	if (typeof relative !== "string" || !existsSync(join(root, relative)))

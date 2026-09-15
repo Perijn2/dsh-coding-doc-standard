@@ -99,6 +99,10 @@ test("selects only pinned fast formatter profiles", () => {
 		"Example.kt",
 		"script.sh",
 		"script.bash",
+		"Example.php",
+		"example.rb",
+		"Example.swift",
+		"example.dart",
 	]) {
 		assert.equal(formatterProfile(path, policy), null, path);
 	}

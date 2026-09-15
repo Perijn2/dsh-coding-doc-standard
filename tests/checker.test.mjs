@@ -31,7 +31,17 @@ const enabledPolicyPath = join(policyDirectory, "first-batch.json");
 const enabledPolicy = JSON.parse(
 	readFileSync(join(root, "src", "policy", "defaults.json"), "utf8"),
 );
-for (const language of ["go", "csharp", "java", "kotlin", "shell"])
+for (const language of [
+	"go",
+	"csharp",
+	"java",
+	"kotlin",
+	"shell",
+	"php",
+	"ruby",
+	"swift",
+	"dart",
+])
 	enabledPolicy.languages[language] = true;
 writeFileSync(enabledPolicyPath, `${JSON.stringify(enabledPolicy)}\n`, "utf8");
 
@@ -203,6 +213,41 @@ printf '%s\\n' example
 printf '%s\\n' example
 `,
 	],
+	[
+		"Example.php",
+		`<?php
+/**
+ * @author Perijn Huijser
+ * Usage: Demonstrates a documented PHP source file.
+ */
+final class Example {}
+`,
+	],
+	[
+		"example.rb",
+		`#!/usr/bin/env ruby
+# Author: Perijn Huijser
+# Summary: Demonstrates a documented Ruby source file.
+# Usage: Require or execute the file as documented.
+puts "example"
+`,
+	],
+	[
+		"Example.swift",
+		`/// Author: Perijn Huijser
+/// Summary: Demonstrates a documented Swift source file.
+/// Usage: Import the module from a supported caller.
+struct Example {}
+`,
+	],
+	[
+		"example.dart",
+		`/// Author: Perijn Huijser
+/// Summary: Demonstrates a documented Dart source file.
+/// Usage: Import the library from a supported caller.
+class Example {}
+`,
+	],
 ];
 
 test("accepts enabled first-batch language headers", () => {
@@ -248,7 +293,7 @@ export {};
 	assert.equal(check("example.mjs", node), 0);
 });
 
-test("leaves unsupported extensions and preambles outside the first batch", () => {
+test("leaves unsupported extensions and preambles outside header-only batches", () => {
 	const header = `/**
  * @author Perijn Huijser
  * Usage: Demonstrates a structural header.
@@ -277,6 +322,73 @@ test("leaves unsupported extensions and preambles outside the first batch", () =
 		check(
 			"Example.cs",
 			`#nullable enable\n${header}public class Example {}\n`,
+			enabledPolicyPath,
+		),
+		2,
+	);
+});
+
+test("rejects unsupported PHP, Ruby, Swift, and Dart preambles when enabled", () => {
+	const php = `<?php
+/**
+ * @author Perijn Huijser
+ * Usage: Documents a PHP header.
+ */
+`;
+	const ruby = `# Author: Perijn Huijser
+# Summary: Documents a Ruby header.
+# Usage: Require the file from a caller.
+`;
+	const slash = `/// Author: Perijn Huijser
+/// Summary: Documents a source header.
+/// Usage: Import the module from a caller.
+`;
+	assert.equal(check("template.phtml", "value\n", enabledPolicyPath), 0);
+	assert.equal(
+		check("Example.swiftinterface", "value\n", enabledPolicyPath),
+		0,
+	);
+	assert.equal(check("example.g.dart", "value\n", enabledPolicyPath), 0);
+	assert.equal(
+		check(
+			"Example.php",
+			`<?php\ndeclare(strict_types=1);\n${php}`,
+			enabledPolicyPath,
+		),
+		2,
+	);
+	assert.equal(
+		check("Example.php", `#!/usr/bin/env php\n${php}`, enabledPolicyPath),
+		2,
+	);
+	assert.equal(
+		check(
+			"example.rb",
+			`# frozen_string_literal: true\n${ruby}`,
+			enabledPolicyPath,
+		),
+		2,
+	);
+	assert.equal(
+		check(
+			"example.rb",
+			`#!/usr/bin/env ruby\n# encoding: utf-8\n${ruby}`,
+			enabledPolicyPath,
+		),
+		2,
+	);
+	assert.equal(
+		check(
+			"Example.swift",
+			`import Foundation\n${slash}struct Example {}\n`,
+			enabledPolicyPath,
+		),
+		2,
+	);
+	assert.equal(
+		check(
+			"example.dart",
+			`import "dart:core";\n${slash}class Example {}\n`,
 			enabledPolicyPath,
 		),
 		2,

@@ -10,7 +10,11 @@
 		"csharp": false,
 		"java": false,
 		"kotlin": false,
-		"shell": false
+		"shell": false,
+		"php": false,
+		"ruby": false,
+		"swift": false,
+		"dart": false
 	},
 	"formatOnWrite": true,
 	"formatPython": true,

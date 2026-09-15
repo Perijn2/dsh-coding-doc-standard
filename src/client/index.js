@@ -67,6 +67,26 @@ window.__ModuleLoader__.load({
 				"Shell (experimental)",
 				"Opt-in conservative leading-header validation only; no formatter runs.",
 			],
+			[
+				"php",
+				"PHP (experimental)",
+				"Opt-in conservative leading-header validation only; no formatter runs.",
+			],
+			[
+				"ruby",
+				"Ruby (experimental)",
+				"Opt-in conservative leading-header validation only; no formatter runs.",
+			],
+			[
+				"swift",
+				"Swift (experimental)",
+				"Opt-in conservative leading-header validation only; no formatter runs.",
+			],
+			[
+				"dart",
+				"Dart (experimental)",
+				"Opt-in conservative leading-header validation only; no formatter runs.",
+			],
 		];
 		const formatterFields = [
 			[

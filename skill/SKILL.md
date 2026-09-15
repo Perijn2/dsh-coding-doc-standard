@@ -26,6 +26,10 @@ a multi-language task.
 | Java (experimental, opt-in, header-only) | [references/java.md](references/java.md) |
 | Kotlin (experimental, opt-in, header-only) | [references/kotlin.md](references/kotlin.md) |
 | Shell (experimental, opt-in, header-only) | [references/shell.md](references/shell.md) |
+| PHP (experimental, opt-in, header-only) | [references/php.md](references/php.md) |
+| Ruby (experimental, opt-in, header-only) | [references/ruby.md](references/ruby.md) |
+| Swift (experimental, opt-in, header-only) | [references/swift.md](references/swift.md) |
+| Dart (experimental, opt-in, header-only) | [references/dart.md](references/dart.md) |
 
 ## The hard rule: establish facts or ask
 

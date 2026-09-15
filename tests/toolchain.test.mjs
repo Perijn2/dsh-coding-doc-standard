@@ -105,7 +105,17 @@ test("enables only provisionable fast formatters on write by default", () => {
 	assert.equal(policy.blockOnMissingFormatter, true);
 	assert.equal(policy.formatters.rust, undefined);
 	assert.equal(policy.formatters.cCpp, undefined);
-	for (const language of ["go", "csharp", "java", "kotlin", "shell"]) {
+	for (const language of [
+		"go",
+		"csharp",
+		"java",
+		"kotlin",
+		"shell",
+		"php",
+		"ruby",
+		"swift",
+		"dart",
+	]) {
 		assert.equal(policy.languages[language], false, `${language}: disabled`);
 		assert.equal(
 			policy[`format${language[0].toUpperCase()}${language.slice(1)}`],

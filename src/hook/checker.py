@@ -45,6 +45,10 @@ SOURCE_EXTENSIONS = {
     ".kt",
     ".sh",
     ".bash",
+    ".php",
+    ".rb",
+    ".swift",
+    ".dart",
 }
 COMPOSE_DEFAULTS = (
     "compose.yaml",
@@ -271,24 +275,24 @@ def _source_header(path: str, text: str) -> str:
             text,
             re.S,
         )
-    elif suffix in {
-        ".ts",
-        ".js",
-        ".mjs",
-        ".cjs",
-        ".c",
-        ".h",
-        ".cc",
-        ".cpp",
-        ".hpp",
-        ".java",
-        ".kt",
-    }:
+    elif suffix in {".ts", ".js", ".mjs", ".cjs"}:
         match = re.match(r"(?:\ufeff)?(?:#![^\n]*\n)?\s*/\*\*(.*?)\*/", text, re.S)
-    elif suffix == ".cs":
+    elif suffix in {".c", ".h", ".cc", ".cpp", ".hpp", ".java", ".kt"}:
+        match = re.match(r"(?:\ufeff)?\s*/\*\*(.*?)\*/", text, re.S)
+    elif suffix == ".php":
+        match = re.match(
+            r"(?:\ufeff)?[ \t]*<\?php[ \t]*(?:\r?\n)?\s*/\*\*(.*?)\*/", text, re.S
+        )
+    elif suffix in {".cs", ".swift", ".dart"}:
         match = re.match(r"(?:\ufeff)?\s*((?:///.*\n?)+)", text)
     elif suffix in {".sh", ".bash"}:
         match = re.match(r"(?:\ufeff)?(?:#![^\n]*\n)?\s*((?:#[^!].*\n?)+)", text)
+    elif suffix == ".rb":
+        match = re.match(
+            r"(?:\ufeff)?(?:#![^\n]*\n)?(?!\s*#.*(?:coding|encoding|frozen_string_literal|typed))\s*((?:#[^!].*\n?)+)",
+            text,
+            re.I,
+        )
     elif suffix == ".rs":
         match = re.match(r"\s*((?://!.*\n?)+)", text)
     else:
@@ -349,7 +353,10 @@ def check_content(path: str, text: str, policy: dict | None = None) -> list[Viol
             if effective["languages"].get("dockerCompose", True)
             else []
         )
+    source_name = Path(path).name.lower()
     suffix = Path(path).suffix.lower()
+    if suffix == ".dart" and source_name.endswith(".g.dart"):
+        return []
     if suffix not in SOURCE_EXTENSIONS:
         return []
     family = {
@@ -365,13 +372,24 @@ def check_content(path: str, text: str, policy: dict | None = None) -> list[Viol
         ".kt": "kotlin",
         ".sh": "shell",
         ".bash": "shell",
+        ".php": "php",
+        ".rb": "ruby",
+        ".swift": "swift",
+        ".dart": "dart",
     }.get(suffix, "cCpp")
     if not effective["languages"].get(family, True):
         return []
     header = _source_header(path, text)
-    if family in {"python", "go", "shell"}:
+    if family in {"python", "go", "shell", "ruby", "swift", "dart"}:
         violations = _require_labels(path, header, ("Author:", "Summary:", "Usage:"))
-    elif family in {"typescriptJavascript", "cCpp", "csharp", "java", "kotlin"}:
+    elif family in {
+        "typescriptJavascript",
+        "cCpp",
+        "csharp",
+        "java",
+        "kotlin",
+        "php",
+    }:
         violations = _require_labels(path, header, ("@author", "Usage:"))
     else:
         violations = _require_labels(path, header, ("Author", "Usage"))

@@ -40,6 +40,10 @@ const POLICY_KEYS = [
 	"java",
 	"kotlin",
 	"shell",
+	"php",
+	"ruby",
+	"swift",
+	"dart",
 	"formatOnWrite",
 	"formatPython",
 	"formatTypescriptJavascript",
@@ -243,16 +247,32 @@ test("persists the effective policy and follows settings changes", async () => {
 		formatPython: false,
 		go: true,
 		shell: true,
+		php: true,
+		ruby: true,
+		swift: true,
+		dart: true,
 	});
 	const updated = await waitFor(async () => {
 		const policy = await readDurablePolicy();
 		if (policy?.formatOnWrite !== false) return null;
-		if (!policy.languages?.go || !policy.languages?.shell) return null;
+		if (
+			!policy.languages?.go ||
+			!policy.languages?.shell ||
+			!policy.languages?.php ||
+			!policy.languages?.ruby ||
+			!policy.languages?.swift ||
+			!policy.languages?.dart
+		)
+			return null;
 		return policy;
 	}, "durable policy update");
 	assert.equal(updated.formatPython, false);
 	assert.equal(updated.languages.go, true);
 	assert.equal(updated.languages.shell, true);
+	assert.equal(updated.languages.php, true);
+	assert.equal(updated.languages.ruby, true);
+	assert.equal(updated.languages.swift, true);
+	assert.equal(updated.languages.dart, true);
 	assert.equal(updated.enabled, true);
 });
 
@@ -299,6 +319,25 @@ test("enforces the opt-in Go header through the native guard", async () => {
 // Summary: Demonstrates an opt-in Go package header.
 // Usage: Import the package from a supported caller.
 package example
+`,
+	});
+	assert.equal(documented.kind, "allow");
+});
+
+test("enforces the opt-in PHP header through the native guard", async () => {
+	const missing = await preExecute(hookAgent, "functions.write", {
+		file_path: "src/Example.php",
+		content: "<?php\nfinal class Example {}\n",
+	});
+	assert.equal(missing.kind, "deny");
+	const documented = await preExecute(hookAgent, "functions.write", {
+		file_path: "src/Example.php",
+		content: `<?php
+/**
+ * @author Perijn Huijser
+ * Usage: Demonstrates an opt-in PHP source header.
+ */
+final class Example {}
 `,
 	});
 	assert.equal(documented.kind, "allow");
