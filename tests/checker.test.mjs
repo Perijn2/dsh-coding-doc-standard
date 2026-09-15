@@ -14,6 +14,8 @@
 
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
+import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import test from "node:test";
 import { fileURLToPath } from "node:url";
@@ -22,6 +24,16 @@ const root = dirname(dirname(fileURLToPath(import.meta.url)));
 const checker = join(root, "src", "hook", "checker.py");
 const python = process.platform === "win32" ? "py" : "python3";
 const baseArgs = process.platform === "win32" ? ["-3"] : [];
+const policyDirectory = mkdtempSync(
+	join(tmpdir(), "coding-doc-standard-policy-"),
+);
+const enabledPolicyPath = join(policyDirectory, "first-batch.json");
+const enabledPolicy = JSON.parse(
+	readFileSync(join(root, "src", "policy", "defaults.json"), "utf8"),
+);
+for (const language of ["go", "csharp", "java", "kotlin", "shell"])
+	enabledPolicy.languages[language] = true;
+writeFileSync(enabledPolicyPath, `${JSON.stringify(enabledPolicy)}\n`, "utf8");
 
 /**
  * Runs the policy checker with one candidate fixture.
@@ -30,8 +42,11 @@ const baseArgs = process.platform === "win32" ? ["-3"] : [];
  * @param {string} content - Complete candidate content.
  * @returns {number} Checker status code.
  */
-function check(path, content) {
-	return spawnSync(python, [...baseArgs, checker, path, "--stdin"], {
+function check(path, content, policyPath) {
+	const args = [...baseArgs, checker, path];
+	if (policyPath) args.push("--policy", policyPath);
+	args.push("--stdin");
+	return spawnSync(python, args, {
 		input: content,
 		encoding: "utf8",
 	}).status;
@@ -136,3 +151,136 @@ export const value = 1
 `;
 	assert.equal(check("example.ts", content), 0);
 });
+
+const FIRST_BATCH_HEADERS = [
+	[
+		"example.go",
+		`// Author: Perijn Huijser
+// Summary: Demonstrates a documented Go package.
+// Usage: Import the package from a caller.
+package example
+`,
+	],
+	[
+		"Example.cs",
+		`/// @author Perijn Huijser
+/// Usage: Demonstrates a documented C# source file.
+public sealed class Example {}
+`,
+	],
+	[
+		"Example.java",
+		`/**
+ * @author Perijn Huijser
+ * Usage: Demonstrates a documented Java source file.
+ */
+class Example {}
+`,
+	],
+	[
+		"Example.kt",
+		`/**
+ * @author Perijn Huijser
+ * Usage: Demonstrates a documented Kotlin source file.
+ */
+class Example
+`,
+	],
+	[
+		"script.sh",
+		`#!/usr/bin/env bash
+# Author: Perijn Huijser
+# Summary: Demonstrates a documented shell script.
+# Usage: Run the script with its supported arguments.
+printf '%s\\n' example
+`,
+	],
+	[
+		"script.bash",
+		`# Author: Perijn Huijser
+# Summary: Demonstrates a documented Bash script.
+# Usage: Source or execute the script as documented.
+printf '%s\\n' example
+`,
+	],
+];
+
+test("accepts enabled first-batch language headers", () => {
+	for (const [path, content] of FIRST_BATCH_HEADERS)
+		assert.equal(check(path, content, enabledPolicyPath), 0, path);
+});
+
+test("blocks enabled first-batch language files without headers", () => {
+	for (const [path] of FIRST_BATCH_HEADERS)
+		assert.equal(check(path, "value\n", enabledPolicyPath), 2, path);
+});
+
+test("bypasses disabled first-batch language profiles", () => {
+	for (const [path] of FIRST_BATCH_HEADERS)
+		assert.equal(check(path, "value\n"), 0, path);
+});
+
+test("supports the documented first-batch preambles only", () => {
+	const go = `//go:build linux
+
+// Author: Perijn Huijser
+// Summary: Documents a build-constrained Go package.
+// Usage: Import the package on supported hosts.
+package example
+`;
+	const python = `#!/usr/bin/env python3
+# -*- coding: utf-8 -*-
+"""Author: Perijn Huijser
+Summary: Documents a shebang Python module.
+
+Usage: Import the module from a caller.
+"""
+`;
+	const node = `#!/usr/bin/env node
+/**
+ * @author Perijn Huijser
+ * Usage: Documents a shebang JavaScript module.
+ */
+export {};
+`;
+	assert.equal(check("example.go", go, enabledPolicyPath), 0);
+	assert.equal(check("example.py", python), 0);
+	assert.equal(check("example.mjs", node), 0);
+});
+
+test("leaves unsupported extensions and preambles outside the first batch", () => {
+	const header = `/**
+ * @author Perijn Huijser
+ * Usage: Demonstrates a structural header.
+ */
+`;
+	assert.equal(check("script.kts", "value\n", enabledPolicyPath), 0);
+	assert.equal(check("script.csx", "value\n", enabledPolicyPath), 0);
+	assert.equal(check("script", "value\n", enabledPolicyPath), 0);
+	assert.equal(
+		check(
+			"Example.java",
+			`@Deprecated\n${header}class Example {}\n`,
+			enabledPolicyPath,
+		),
+		2,
+	);
+	assert.equal(
+		check(
+			"Example.kt",
+			`@file:Suppress("unused")\n${header}class Example\n`,
+			enabledPolicyPath,
+		),
+		2,
+	);
+	assert.equal(
+		check(
+			"Example.cs",
+			`#nullable enable\n${header}public class Example {}\n`,
+			enabledPolicyPath,
+		),
+		2,
+	);
+});
+
+test.after(() => rmSync(policyDirectory, { recursive: true, force: true }));

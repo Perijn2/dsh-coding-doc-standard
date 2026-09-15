@@ -39,6 +39,12 @@ SOURCE_EXTENSIONS = {
     ".cc",
     ".cpp",
     ".hpp",
+    ".go",
+    ".cs",
+    ".java",
+    ".kt",
+    ".sh",
+    ".bash",
 }
 COMPOSE_DEFAULTS = (
     "compose.yaml",
@@ -211,6 +217,40 @@ def _check_compose(path: str, text: str) -> list[Violation]:
     return violations
 
 
+def _go_source_header(text: str) -> str:
+    """Summary: Extracts a supported Go package documentation header.
+
+    Parameters:
+        text: Complete candidate Go source content.
+
+    Returns:
+        Consecutive package documentation lines, or an empty string.
+    """
+
+    lines = text.removeprefix("\ufeff").splitlines()
+    index = 0
+    if index < len(lines) and (
+        lines[index].startswith("//go:build") or lines[index].startswith("// +build")
+    ):
+        while index < len(lines) and lines[index].startswith("//"):
+            index += 1
+        if index >= len(lines) or lines[index].strip():
+            return ""
+        while index < len(lines) and not lines[index].strip():
+            index += 1
+    header: list[str] = []
+    while index < len(lines) and lines[index].startswith("//"):
+        header.append(lines[index][2:].lstrip())
+        index += 1
+    if (
+        not header
+        or index >= len(lines)
+        or not re.match(r"package\s+\w+", lines[index])
+    ):
+        return ""
+    return "\n".join(header)
+
+
 def _source_header(path: str, text: str) -> str:
     """Summary: Extracts a language-native leading documentation header.
 
@@ -223,12 +263,32 @@ def _source_header(path: str, text: str) -> str:
     """
 
     suffix = Path(path).suffix.lower()
+    if suffix == ".go":
+        return _go_source_header(text)
     if suffix == ".py":
         match = re.match(
-            r"\s*(?:[rubfRUBF]{0,2})?(?:'''|\"\"\")(.*?)(?:'''|\"\"\")", text, re.S
+            r"(?:\ufeff)?(?:#![^\n]*\n)?(?:[ \t]*#.*coding[:=][ \t]*[-\w.]+[^\n]*\n)?\s*(?:[rubfRUBF]{0,2})?(?:'''|\"\"\")(.*?)(?:'''|\"\"\")",
+            text,
+            re.S,
         )
-    elif suffix in {".ts", ".js", ".mjs", ".cjs", ".c", ".h", ".cc", ".cpp", ".hpp"}:
-        match = re.match(r"\s*/\*\*(.*?)\*/", text, re.S)
+    elif suffix in {
+        ".ts",
+        ".js",
+        ".mjs",
+        ".cjs",
+        ".c",
+        ".h",
+        ".cc",
+        ".cpp",
+        ".hpp",
+        ".java",
+        ".kt",
+    }:
+        match = re.match(r"(?:\ufeff)?(?:#![^\n]*\n)?\s*/\*\*(.*?)\*/", text, re.S)
+    elif suffix == ".cs":
+        match = re.match(r"(?:\ufeff)?\s*((?:///.*\n?)+)", text)
+    elif suffix in {".sh", ".bash"}:
+        match = re.match(r"(?:\ufeff)?(?:#![^\n]*\n)?\s*((?:#[^!].*\n?)+)", text)
     elif suffix == ".rs":
         match = re.match(r"\s*((?://!.*\n?)+)", text)
     else:
@@ -299,13 +359,19 @@ def check_content(path: str, text: str, policy: dict | None = None) -> list[Viol
         ".js": "typescriptJavascript",
         ".mjs": "typescriptJavascript",
         ".cjs": "typescriptJavascript",
+        ".go": "go",
+        ".cs": "csharp",
+        ".java": "java",
+        ".kt": "kotlin",
+        ".sh": "shell",
+        ".bash": "shell",
     }.get(suffix, "cCpp")
     if not effective["languages"].get(family, True):
         return []
     header = _source_header(path, text)
-    if suffix == ".py":
+    if family in {"python", "go", "shell"}:
         violations = _require_labels(path, header, ("Author:", "Summary:", "Usage:"))
-    elif suffix in {".ts", ".js", ".mjs", ".cjs", ".c", ".h", ".cc", ".cpp", ".hpp"}:
+    elif family in {"typescriptJavascript", "cCpp", "csharp", "java", "kotlin"}:
         violations = _require_labels(path, header, ("@author", "Usage:"))
     else:
         violations = _require_labels(path, header, ("Author", "Usage"))

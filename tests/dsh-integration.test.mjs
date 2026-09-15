@@ -35,6 +35,11 @@ const POLICY_KEYS = [
 	"rust",
 	"cCpp",
 	"dockerCompose",
+	"go",
+	"csharp",
+	"java",
+	"kotlin",
+	"shell",
 	"formatOnWrite",
 	"formatPython",
 	"formatTypescriptJavascript",
@@ -233,12 +238,21 @@ test("runs the workspace verifier through the DSH command handler", async () => 
 test("persists the effective policy and follows settings changes", async () => {
 	const initial = await waitFor(readDurablePolicy, "durable policy file");
 	assert.equal(initial.formatOnWrite, true);
-	settings.change({ formatOnWrite: false, formatPython: false });
+	settings.change({
+		formatOnWrite: false,
+		formatPython: false,
+		go: true,
+		shell: true,
+	});
 	const updated = await waitFor(async () => {
 		const policy = await readDurablePolicy();
-		return policy?.formatOnWrite === false ? policy : null;
+		if (policy?.formatOnWrite !== false) return null;
+		if (!policy.languages?.go || !policy.languages?.shell) return null;
+		return policy;
 	}, "durable policy update");
 	assert.equal(updated.formatPython, false);
+	assert.equal(updated.languages.go, true);
+	assert.equal(updated.languages.shell, true);
 	assert.equal(updated.enabled, true);
 });
 
@@ -271,6 +285,23 @@ test("allows a documented and formatted namespaced TypeScript write", async () =
 		content: COMPLIANT_TS,
 	});
 	assert.equal(result.kind, "allow");
+});
+
+test("enforces the opt-in Go header through the native guard", async () => {
+	const missing = await preExecute(hookAgent, "functions.write", {
+		file_path: "src/example.go",
+		content: "package example\n",
+	});
+	assert.equal(missing.kind, "deny");
+	const documented = await preExecute(hookAgent, "functions.write", {
+		file_path: "src/example.go",
+		content: `// Author: Perijn Huijser
+// Summary: Demonstrates an opt-in Go package header.
+// Usage: Import the package from a supported caller.
+package example
+`,
+	});
+	assert.equal(documented.kind, "allow");
 });
 
 test("applies the global guard to every agent identity", () => {

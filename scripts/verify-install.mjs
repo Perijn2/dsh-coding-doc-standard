@@ -32,7 +32,16 @@ const required = [
 	"scripts/provision-tools.mjs",
 	"scripts/verify-dsh-contract.mjs",
 	"skill/SKILL.md",
+	"skill/references/python.md",
+	"skill/references/typescript-javascript.md",
+	"skill/references/rust.md",
+	"skill/references/c-cpp.md",
 	"skill/references/docker-compose.md",
+	"skill/references/go.md",
+	"skill/references/csharp.md",
+	"skill/references/java.md",
+	"skill/references/kotlin.md",
+	"skill/references/shell.md",
 ];
 for (const relative of required) {
 	if (typeof relative !== "string" || !existsSync(join(root, relative)))

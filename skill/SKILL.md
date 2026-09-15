@@ -21,6 +21,11 @@ a multi-language task.
 | Rust | [references/rust.md](references/rust.md) |
 | C / C++ | [references/c-cpp.md](references/c-cpp.md) |
 | Docker Compose | [references/docker-compose.md](references/docker-compose.md) |
+| Go (experimental, opt-in, header-only) | [references/go.md](references/go.md) |
+| C# (experimental, opt-in, header-only) | [references/csharp.md](references/csharp.md) |
+| Java (experimental, opt-in, header-only) | [references/java.md](references/java.md) |
+| Kotlin (experimental, opt-in, header-only) | [references/kotlin.md](references/kotlin.md) |
+| Shell (experimental, opt-in, header-only) | [references/shell.md](references/shell.md) |
 
 ## The hard rule: establish facts or ask
 

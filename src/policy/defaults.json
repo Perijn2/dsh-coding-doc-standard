@@ -5,7 +5,12 @@
 		"typescriptJavascript": true,
 		"rust": true,
 		"cCpp": true,
-		"dockerCompose": true
+		"dockerCompose": true,
+		"go": false,
+		"csharp": false,
+		"java": false,
+		"kotlin": false,
+		"shell": false
 	},
 	"formatOnWrite": true,
 	"formatPython": true,

@@ -92,6 +92,16 @@ test("selects only pinned fast formatter profiles", () => {
 		"rust",
 	);
 	assert.equal(formatterProfile("example.cpp", policy), null);
+	for (const path of [
+		"example.go",
+		"example.cs",
+		"Example.java",
+		"Example.kt",
+		"script.sh",
+		"script.bash",
+	]) {
+		assert.equal(formatterProfile(path, policy), null, path);
+	}
 });
 
 test("accepts a rustfmt-formatted Rust candidate when the opt-in profile is enabled", async () => {

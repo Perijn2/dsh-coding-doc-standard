@@ -127,6 +127,11 @@ async function installSettings(ctx, policy) {
 			dockerCompose: schemaTools
 				.boolean()
 				.default(policy.languages.dockerCompose),
+			go: schemaTools.boolean().default(policy.languages.go),
+			csharp: schemaTools.boolean().default(policy.languages.csharp),
+			java: schemaTools.boolean().default(policy.languages.java),
+			kotlin: schemaTools.boolean().default(policy.languages.kotlin),
+			shell: schemaTools.boolean().default(policy.languages.shell),
 			formatOnWrite: schemaTools.boolean().default(policy.formatOnWrite),
 			formatPython: schemaTools.boolean().default(policy.formatPython),
 			formatTypescriptJavascript: schemaTools
@@ -176,6 +181,11 @@ async function installSettings(ctx, policy) {
 							rust: value.rust,
 							cCpp: value.cCpp,
 							dockerCompose: value.dockerCompose,
+							go: value.go,
+							csharp: value.csharp,
+							java: value.java,
+							kotlin: value.kotlin,
+							shell: value.shell,
 						},
 					});
 				},

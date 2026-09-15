@@ -105,6 +105,19 @@ test("enables only provisionable fast formatters on write by default", () => {
 	assert.equal(policy.blockOnMissingFormatter, true);
 	assert.equal(policy.formatters.rust, undefined);
 	assert.equal(policy.formatters.cCpp, undefined);
+	for (const language of ["go", "csharp", "java", "kotlin", "shell"]) {
+		assert.equal(policy.languages[language], false, `${language}: disabled`);
+		assert.equal(
+			policy[`format${language[0].toUpperCase()}${language.slice(1)}`],
+			undefined,
+			`${language}: no formatter toggle`,
+		);
+		assert.equal(
+			policy.formatters[language],
+			undefined,
+			`${language}: no formatter metadata`,
+		);
+	}
 });
 
 test("registers formatter controls in the dedicated settings navigation item", () => {

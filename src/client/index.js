@@ -42,6 +42,31 @@ window.__ModuleLoader__.load({
 				"Docker Compose",
 				"Check human-readable YAML comment headers and service summaries.",
 			],
+			[
+				"go",
+				"Go (experimental)",
+				"Opt-in conservative leading-header validation only; no formatter runs.",
+			],
+			[
+				"csharp",
+				"C# (experimental)",
+				"Opt-in conservative leading-header validation only; no formatter runs.",
+			],
+			[
+				"java",
+				"Java (experimental)",
+				"Opt-in conservative leading-header validation only; no formatter runs.",
+			],
+			[
+				"kotlin",
+				"Kotlin (experimental)",
+				"Opt-in conservative leading-header validation only; no formatter runs.",
+			],
+			[
+				"shell",
+				"Shell (experimental)",
+				"Opt-in conservative leading-header validation only; no formatter runs.",
+			],
 		];
 		const formatterFields = [
 			[
