@@ -75,3 +75,11 @@ Use `--optional` to report unavailable external tools without failing.
 Python uses Ruff `0.16.6`; TypeScript and JavaScript use `@biomejs/biome`
 `2.5.12`; and Docker Compose uses Prettier `3.9.6`. See `docs/toolchain.md` for
 provisioning, the settings controls, and why Rust/C++ remain detailed-only.
+
+## Planned language profiles
+
+Evidence-based implementation plans for Go, C#, Java, Kotlin, PHP, Ruby, Swift,
+Dart, Elixir, Haskell, Shell, Lua, and Scala are in
+[`docs/plans/language-profile-expansion.md`](docs/plans/language-profile-expansion.md).
+They are not advertised as active support until their guard, formatter, verifier,
+settings, tests, and package assets are implemented together.
