@@ -116,7 +116,12 @@ Documentation is prose for people first.
 
 The write guard mechanically blocks missing leading documentation headers for
 all supported source families, missing Python public-unit docstrings, and
-incomplete Compose root or service comments. It cannot determine whether a
+incomplete Compose root or service comments. When the experimental TypeScript /
+JavaScript exported-units setting is enabled, it also blocks direct top-level
+exports without an attached expanded JSDoc block. Compiler-dependent profiles
+can use an explicitly configured project adapter that receives the pending
+candidate without writing it to disk; an enabled adapter mode fails closed when
+its adapter cannot provide structured results. No guard can determine whether a
 semantic claim is true; review code and tests for that.
 
 Formatter policy is intentionally split by tool capability:

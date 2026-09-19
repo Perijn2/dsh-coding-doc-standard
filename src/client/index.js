@@ -35,6 +35,11 @@ window.__ModuleLoader__.load({
 				"TypeScript / JavaScript",
 				"Check source-module documentation.",
 			],
+			[
+				"typescriptJavascriptPublicUnits",
+				"TypeScript / JavaScript exported units (experimental)",
+				"Opt-in direct-export JSDoc checks; semantic API coverage remains project-adapter work.",
+			],
 			["rust", "Rust", "Check Rust module documentation."],
 			["cCpp", "C / C++", "Check Doxygen-compatible source headers."],
 			[

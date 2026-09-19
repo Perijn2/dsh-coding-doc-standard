@@ -21,9 +21,12 @@ TypeScript; JavaScript may use JSDoc's optional `{type}` notation when the type
 is not otherwise evident.
 
 The write guard mechanically requires a leading TSDoc/JSDoc header containing
-`@author` and `Usage:`. Tag completeness, layout, and semantic accuracy remain
-review requirements because the guard cannot reliably infer every exported API
-contract.
+`@author` and `Usage:`. When the experimental **TypeScript / JavaScript exported
+units** setting is enabled, it also requires an attached `/** ... */` JSDoc block
+for direct top-level exported functions, classes, interfaces, type aliases,
+enums, and variables. It intentionally does not resolve `export *`, named
+re-exports, type-derived API surfaces, or semantic tag completeness; those stay
+project-adapter and review requirements.
 
 ## Documentation-shape example
 

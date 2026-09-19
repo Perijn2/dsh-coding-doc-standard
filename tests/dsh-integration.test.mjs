@@ -47,6 +47,7 @@ const POLICY_KEYS = [
 	"haskell",
 	"lua",
 	"scala",
+	"typescriptJavascriptPublicUnits",
 	"formatOnWrite",
 	"formatPython",
 	"formatTypescriptJavascript",
@@ -70,6 +71,9 @@ const COMPLIANT_TS = [
 	' *   Worked example: import { ANSWER } from "./integration-example";',
 	" */",
 	"",
+	"/**",
+	" * Exposes the documented integration answer.",
+	" */",
 	"export const ANSWER = 42;",
 	"",
 ].join("\n");
@@ -257,10 +261,12 @@ test("persists the effective policy and follows settings changes", async () => {
 		haskell: true,
 		lua: true,
 		scala: true,
+		typescriptJavascriptPublicUnits: true,
 	});
 	const updated = await waitFor(async () => {
 		const policy = await readDurablePolicy();
 		if (policy?.formatOnWrite !== false) return null;
+		if (!policy?.publicUnitDocs?.typescriptJavascript) return null;
 		if (
 			!policy.languages?.go ||
 			!policy.languages?.shell ||
@@ -285,6 +291,7 @@ test("persists the effective policy and follows settings changes", async () => {
 	assert.equal(updated.languages.haskell, true);
 	assert.equal(updated.languages.lua, true);
 	assert.equal(updated.languages.scala, true);
+	assert.equal(updated.publicUnitDocs.typescriptJavascript, true);
 	assert.equal(updated.enabled, true);
 });
 

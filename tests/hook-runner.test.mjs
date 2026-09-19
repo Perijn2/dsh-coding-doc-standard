@@ -18,9 +18,11 @@ import { mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
+import { checkProjectPublicUnits } from "../src/hook/public-unit-adapter.mjs";
 import {
 	candidateFromPayload,
 	checkFormatting,
+	checkSourcePublicUnits,
 	formatterProfile,
 	loadPolicy,
 } from "../src/hook/run.mjs";
@@ -109,6 +111,117 @@ test("selects only pinned fast formatter profiles", () => {
 	]) {
 		assert.equal(formatterProfile(path, policy), null, path);
 	}
+});
+
+test("checks direct exported TypeScript and JavaScript units only when enabled", () => {
+	const policy = {
+		...loadPolicy(),
+		publicUnitDocs: { typescriptJavascript: true },
+	};
+	const missing = checkSourcePublicUnits(
+		{
+			path: "example.ts",
+			content: `export function missing() {}
+export const value = 1;
+function privateHelper() {}
+export { privateHelper };
+`,
+		},
+		policy,
+	);
+	assert.equal(missing.length, 2);
+	assert.match(missing[0], /exported function 'missing'/);
+	assert.match(missing[1], /exported variable 'value'/);
+	const documented = checkSourcePublicUnits(
+		{
+			path: "example.js",
+			content: `/**
+ * Documents the exported function.
+ */
+export function documented() {}
+/**
+ * Documents the default class.
+ */
+export default class Example {}
+`,
+		},
+		policy,
+	);
+	assert.deepEqual(documented, []);
+	assert.deepEqual(
+		checkSourcePublicUnits(
+			{ path: "example.ts", content: "export function missing() {}\n" },
+			{ ...loadPolicy(), publicUnitDocs: { typescriptJavascript: false } },
+		),
+		[],
+	);
+});
+
+test("fails closed only for enabled project public-unit adapters", async () => {
+	const candidate = { path: "example.go", content: "package example\n" };
+	assert.deepEqual(await checkProjectPublicUnits(candidate, loadPolicy()), []);
+	const enabled = {
+		...loadPolicy(),
+		publicUnitDocs: { go: true },
+		publicUnitAdapters: {},
+	};
+	const failures = await checkProjectPublicUnits(candidate, enabled);
+	assert.equal(failures.length, 1);
+	assert.match(failures[0], /go is enabled but not configured/);
+});
+
+test("normalizes project adapter violations from pending candidate JSON", async () => {
+	const adapterProgram = `let input = "";
+process.stdin.on("data", (chunk) => input += chunk);
+process.stdin.on("end", () => {
+  const candidate = JSON.parse(input);
+  console.log(JSON.stringify({ violations: [{
+    line: 3,
+    kind: "function",
+    name: candidate.content === "pending" ? "run" : "wrong",
+    message: "Missing native documentation."
+  }] }));
+});`;
+	const policy = {
+		...loadPolicy(),
+		publicUnitDocs: { go: true },
+		publicUnitAdapters: {
+			go: { command: process.execPath, args: ["-e", adapterProgram] },
+		},
+	};
+	assert.deepEqual(
+		await checkProjectPublicUnits(
+			{ path: "example.go", content: "pending" },
+			policy,
+		),
+		[
+			"example.go:3 [doc-standard] Missing native documentation. (function run)",
+		],
+	);
+});
+
+test("fails closed for malformed and failing project adapters", async () => {
+	const base = { ...loadPolicy(), publicUnitDocs: { go: true } };
+	const malformed = await checkProjectPublicUnits(
+		{ path: "example.go", content: "pending" },
+		{
+			...base,
+			publicUnitAdapters: {
+				go: { command: process.execPath, args: ["-e", "console.log('bad')"] },
+			},
+		},
+	);
+	assert.match(malformed[0], /returned invalid output/);
+	const failing = await checkProjectPublicUnits(
+		{ path: "example.go", content: "pending" },
+		{
+			...base,
+			publicUnitAdapters: {
+				go: { command: process.execPath, args: ["-e", "process.exit(7)"] },
+			},
+		},
+	);
+	assert.match(failing[0], /failed: exit 7/);
 });
 
 test("accepts a rustfmt-formatted Rust candidate when the opt-in profile is enabled", async () => {

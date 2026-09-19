@@ -43,6 +43,10 @@ export async function loadPolicy() {
 			...defaults,
 			...override,
 			languages: { ...defaults.languages, ...override.languages },
+			publicUnitDocs: {
+				...defaults.publicUnitDocs,
+				...override.publicUnitDocs,
+			},
 		};
 	} catch {
 		return defaults;
@@ -139,6 +143,9 @@ async function installSettings(ctx, policy) {
 			haskell: schemaTools.boolean().default(policy.languages.haskell),
 			lua: schemaTools.boolean().default(policy.languages.lua),
 			scala: schemaTools.boolean().default(policy.languages.scala),
+			typescriptJavascriptPublicUnits: schemaTools
+				.boolean()
+				.default(policy.publicUnitDocs?.typescriptJavascript ?? false),
 			formatOnWrite: schemaTools.boolean().default(policy.formatOnWrite),
 			formatPython: schemaTools.boolean().default(policy.formatPython),
 			formatTypescriptJavascript: schemaTools
@@ -155,6 +162,8 @@ async function installSettings(ctx, policy) {
 		let source = () => ({
 			enabled: policy.enabled,
 			...policy.languages,
+			typescriptJavascriptPublicUnits:
+				policy.publicUnitDocs?.typescriptJavascript ?? false,
 			formatOnWrite: policy.formatOnWrite,
 			formatPython: policy.formatPython,
 			formatTypescriptJavascript: policy.formatTypescriptJavascript,
@@ -182,6 +191,10 @@ async function installSettings(ctx, policy) {
 						formatRust: value.formatRust,
 						formatDockerCompose: value.formatDockerCompose,
 						blockOnMissingFormatter: value.blockOnMissingFormatter,
+						publicUnitDocs: {
+							...policy.publicUnitDocs,
+							typescriptJavascript: value.typescriptJavascriptPublicUnits,
+						},
 						languages: {
 							python: value.python,
 							typescriptJavascript: value.typescriptJavascript,

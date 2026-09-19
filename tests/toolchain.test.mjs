@@ -47,6 +47,12 @@ test("pins pre-write formatter versions in package and policy metadata", () => {
 	assert.equal(policy.formatters.dockerCompose, "prettier@3.9.6");
 });
 
+test("pins the TypeScript compiler parser for opt-in direct-export checks", () => {
+	assert.equal(packageJson.dependencies.typescript, "5.9.3");
+	assert.equal(policy.publicUnitDocs.typescriptJavascript, false);
+	assert.match(client, /typescriptJavascriptPublicUnits/);
+});
+
 test("pins a checksum-verified Doxygen asset for every supported platform", () => {
 	assert.deepEqual(supportedDoxygenPlatforms(tools.doxygen), [
 		"darwin-arm64",

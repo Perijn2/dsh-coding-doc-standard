@@ -22,6 +22,8 @@ import { readFile } from "node:fs/promises";
 import { homedir } from "node:os";
 import { basename, dirname, extname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
+import { checkProjectPublicUnits } from "./public-unit-adapter.mjs";
+import { checkTypescriptPublicUnits } from "./typescript-public-docs.mjs";
 
 const sourceRoot = dirname(dirname(fileURLToPath(import.meta.url)));
 const packageRoot = dirname(sourceRoot);
@@ -236,6 +238,20 @@ export function runChecker(candidate) {
 }
 
 /**
+ * Checks source-only public-unit policies against one pending candidate.
+ *
+ * @param {{path: string, content: string}} candidate - Proposed file state.
+ * @param {Record<string, unknown>} [policy] - Effective policy override for testing.
+ * @returns {string[]} Blocking diagnostics for enabled source-only public-unit policies.
+ */
+export function checkSourcePublicUnits(candidate, policy = loadPolicy()) {
+	return checkTypescriptPublicUnits(candidate, policy).map(
+		(violation) =>
+			`${candidate.path}:${violation.line} [doc-standard] ${violation.message}`,
+	);
+}
+
+/**
  * Executes a hook payload and converts validation failures into blocking feedback.
  *
  * @param {Record<string, unknown>} payload - Hook event payload.
@@ -244,12 +260,28 @@ export function runChecker(candidate) {
 export async function runHook(payload) {
 	try {
 		const candidate = await candidateFromPayload(payload);
-		const formattingFailure = await checkFormatting(candidate);
+		const policy = loadPolicy();
+		const formattingFailure = await checkFormatting(candidate, policy);
 		if (formattingFailure) {
 			console.error(formattingFailure);
 			return 2;
 		}
-		return await runChecker(candidate);
+		const checkerStatus = await runChecker(candidate);
+		if (checkerStatus !== 0) return checkerStatus;
+		const publicUnitViolations = checkSourcePublicUnits(candidate, policy);
+		if (publicUnitViolations.length) {
+			console.error(publicUnitViolations.join("\n"));
+			return 2;
+		}
+		const projectViolations = await checkProjectPublicUnits(
+			{ ...candidate, cwd: process.cwd() },
+			policy,
+		);
+		if (projectViolations.length) {
+			console.error(projectViolations.join("\n"));
+			return 2;
+		}
+		return 0;
 	} catch (error) {
 		console.error(
 			`[doc-standard] Cannot validate pending write: ${error.message}`,

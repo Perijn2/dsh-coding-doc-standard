@@ -19,6 +19,22 @@
 		"lua": false,
 		"scala": false
 	},
+	"publicUnitDocs": {
+		"typescriptJavascript": false,
+		"rust": false,
+		"cCpp": false,
+		"go": false,
+		"csharp": false,
+		"java": false,
+		"kotlin": false,
+		"php": false,
+		"ruby": false,
+		"swift": false,
+		"dart": false,
+		"haskell": false,
+		"scala": false
+	},
+	"publicUnitAdapters": {},
 	"formatOnWrite": true,
 	"formatPython": true,
 	"formatTypescriptJavascript": true,
