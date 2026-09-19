@@ -76,10 +76,14 @@ Python uses Ruff `0.16.6`; TypeScript and JavaScript use `@biomejs/biome`
 `2.5.12`; and Docker Compose uses Prettier `3.9.6`. See `docs/toolchain.md` for
 provisioning, the settings controls, and why Rust/C++ remain detailed-only.
 
-## Planned language profiles
+## Public-unit adapters
 
-Evidence-based implementation plans for Go, C#, Java, Kotlin, PHP, Ruby, Swift,
-Dart, Elixir, Haskell, Shell, Lua, and Scala are in
+TypeScript and JavaScript can opt into direct-export JSDoc checks. Public API
+coverage for compiler-dependent profiles is project-owned: configure a native
+compiler/analyzer adapter using [`docs/public-unit-adapters.md`](docs/public-unit-adapters.md).
+The adapter receives pending candidate text without disk staging and is
+responsible for resolving the project's actual public surface.
+
+The evidence and remaining design decisions for language-specific adapters are in
 [`docs/plans/language-profile-expansion.md`](docs/plans/language-profile-expansion.md).
-They are not advertised as active support until their guard, formatter, verifier,
-settings, tests, and package assets are implemented together.
+Elixir remains deferred until an AST-aware `@moduledoc` / `@doc` adapter exists.
