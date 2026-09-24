@@ -2,33 +2,67 @@
 
 Author: Perijn Huijser
 
-## Experimental, opt-in profile
+Load this reference for PHP after applying `SKILL.md`.
 
-This profile is disabled by default. It checks only a conservative leading PHP
-house header for `.php` files. It has no PHPDoc semantic validation, public
-symbol parser, formatter, or detailed verifier yet.
+## Preamble and file header
 
-## Supported header shape
+Begin with the literal `<?php` tag. Place the expanded file DocBlock immediately
+after it, before other PHP constructs; `declare`, namespaces, imports,
+attributes, and generated-file markers need project-specific policy. `SKILL.md`
+defines the shared header content; render it in PHPDoc form:
 
-Begin with the literal `<?php` opening tag, then place an expanded `/** ... */`
-block before every other PHP construct. The block must contain the shared house
-fields `@author` and `Usage:`. Keep every statement evidence-based; `Usage:` is
-this package's structural policy and not a native PHPDoc tag.
+```php
+<?php
+/**
+ * @author Established Author
+ * Summary: Builds the verified request object for application callers.
+ *
+ * Usage:
+ *   Import this file through the project's configured loader, then call the
+ *   documented API and handle its established result or failure contract.
+ */
+```
 
-Short tags, shebangs, templates, `declare`, namespaces, imports, generated-file
-markers, and arbitrary preambles are unsupported in this version. The profile
-fails when enabled rather than guessing whether a DocBlock belongs to the file
-or a later declaration.
+The sample shows syntax only. Replace each claim with facts from the target file.
 
-## Native PHP guidance
+## Attach PHPDoc to exposed declarations
 
-PHP comments can supply source documentation, and PHPDoc DocBlocks document
-structural elements. Public API coverage needs a PHP-aware parser because
-attributes, namespaces, traits, promoted properties, and visibility affect what
-callers can use.
+Use an expanded `/** ... */` block immediately before public classes,
+interfaces, traits, enums, functions, methods, properties, constants, or
+configuration values that callers use. Protected members belong only when an
+established extension contract exposes them.
 
-## Current limits
+```php
+/**
+ * Builds the report requested by the caller.
+ *
+ * @param string $source Source accepted by the report workflow.
+ * @param array<string, mixed> $options Documented report options.
+ *
+ * @return Report The result defined by this API.
+ *
+ * @throws ReportException When the known report operation fails.
+ */
+function buildReport(string $source, array $options): Report
+{
+    // Implementation established by the target project.
+}
+```
 
-Do not infer that this profile runs Composer, PHP-CS-Fixer, Pint, PHPStan,
-phpDocumentor, or PHP tests. Project-root discovery, tool versions, and ruleset
-selection remain a later project-aware phase.
+Use PHPDoc types, `@param`, `@return`, and `@throws` only when they match code
+and known behavior. Describe nullable and union behavior, mutation, generators,
+or magic methods only when established.
+
+## PHP-specific writing conventions
+
+- Keep the block attached to its declaration; namespace, trait, promoted
+  property, attribute, and magic-method semantics require PHP-aware context.
+- Match parameter names including `$`, and describe array shapes or generics only
+  when the project convention and implementation establish them.
+- Do not document private or internal implementation as a public contract.
+
+## Tooling boundaries
+
+Do not infer or mandate Composer, PHP-CS-Fixer, Pint, PHPStan, phpDocumentor,
+PHPUnit, or PHP syntax checks. Discover project configuration and commands from
+the target project.

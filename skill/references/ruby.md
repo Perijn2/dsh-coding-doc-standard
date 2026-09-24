@@ -2,32 +2,64 @@
 
 Author: Perijn Huijser
 
-## Experimental, opt-in profile
+Load this reference for Ruby after applying `SKILL.md`.
 
-This profile is disabled by default. It checks only a conservative leading
-house header for `.rb` files. It has no YARD semantic validation, public-method
-parser, formatter, or detailed verifier yet.
+## Preamble and file header
 
-## Supported header shape
+Keep a shebang first. Ruby magic comments (`coding`, `frozen_string_literal`, or
+`typed`) must remain in their required positions; place the `#` header after that
+preamble and before code. `SKILL.md` defines the header content; implement it as
+consecutive comments:
 
-Place consecutive `#` comment lines after an optional first-line shebang. The
-header must contain `Author:`, `Summary:`, and `Usage:`. These are this
-package's house fields, not a claim that they are native YARD tags.
+```ruby
+#!/usr/bin/env ruby
+# frozen_string_literal: true
+#
+# Author: Established Author
+# Summary: Loads the verified report configuration for callers.
+#
+# Usage:
+#   Require this file, construct the documented object, and handle the result or
+#   failure behavior established by the target implementation.
+```
 
-Ruby magic comments (`coding`, `frozen_string_literal`, and `typed`),
-extensionless Gemfile/Rakefile files, `.ru`, `.rake`, framework DSL files,
-`__END__`, generated-file markers, and other directives are unsupported in this
-version. The profile fails when enabled instead of attaching a header past an
-ambiguous preamble.
+This is syntax only. Replace its claims with target facts. Extensionless Ruby
+files, `__END__`, generated files, and framework preambles need project policy.
 
-## Native Ruby guidance
+## Attach YARD documentation to caller-facing units
 
-YARD is a Ruby documentation system, but visibility and public API are not
-safe to infer with regular expressions: classes can reopen, methods can be
-singleton methods, and DSLs can define callable interfaces dynamically.
+Ruby has no static public boundary. Use project evidence for public classes,
+modules, constants, methods, singleton methods, and DSL interfaces. Put a YARD
+block directly before the declaration it documents; `private` and `protected`
+methods are not public without an established extension contract.
 
-## Current limits
+```ruby
+# Builds the report requested by the caller.
+#
+# @param source [String] source accepted by the established report workflow.
+# @param options [Hash] documented report options.
+# @return [Report] result described by this API's contract.
+# @raise [ReportError] when the known report operation fails.
+def build_report(source, options)
+  # Implementation established by the target project.
+end
+```
 
-Do not infer that this profile runs Bundler, RuboCop, StandardRB, YARD, or Ruby
-tests. Project roots, tool versions, and documentation-coverage policy must be
-proved for the target project first.
+Use tags only when the project uses YARD. Describe yielded values, mutation,
+return shape, and exceptions only when established; comments on dynamic methods
+or DSL declarations must identify the actual caller-facing contract.
+
+## Ruby-specific writing conventions
+
+- Keep documentation adjacent to `def`, `class`, `module`, or the DSL call it
+  describes; reopened classes and generated methods require project context.
+- Document keyword arguments and blocks by their real names, including whether a
+  block is yielded to or required, when known.
+- Use prose for lifecycle, ownership, or callback obligations that cannot be
+  expressed by a YARD tag; do not invent a type or exception merely for tags.
+
+## Tooling boundaries
+
+Do not infer or mandate Bundler, RuboCop, StandardRB, YARD, or Ruby tests.
+Project roots, tool versions, and documentation coverage must be proven by the
+target project.

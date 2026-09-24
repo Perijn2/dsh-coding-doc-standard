@@ -50,9 +50,11 @@ correctness remains code and review evidence.
 
 ## Repository integration map
 
-A fully supported profile changes every applicable layer below. The current
-implementation supports only Python, TypeScript/JavaScript, Rust, C/C++, and
-Docker Compose, so there is no generic plug-in registry to update once.
+A fully supported profile changes every applicable layer below. The implementation
+now enables the listed language header profiles by default alongside Python,
+TypeScript/JavaScript, Rust, C/C++, and Docker Compose. Public-unit enforcement
+still uses language-specific parsers or configured project adapters where syntax
+alone cannot establish the public API.
 
 | Layer | Current path | Required language-profile work |
 |---|---|---|

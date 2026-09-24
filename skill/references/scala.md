@@ -2,31 +2,53 @@
 
 Author: Perijn Huijser
 
-## Experimental, opt-in profile
+Load this reference for Scala after applying `SKILL.md`.
 
-This profile is disabled by default. It checks only a conservative leading
-`/** ... */` house header for `.scala` files. It has no Scaladoc semantic
-validation, public-symbol parser, formatter, or detailed verifier yet.
+## File and public-API rules
 
-## Supported header shape
+Start with an expanded `/** ... */` block after an optional BOM and whitespace.
+The header must contain verified `@author`, a one-sentence prose Summary, and
+`Usage:`. Scala CLI directives, package/import/annotation preambles, shebangs,
+`.sc` scripts, and generated sources require project-specific policy.
 
-Start the file with an expanded `/** ... */` block after an optional BOM and
-whitespace. The block must contain `@author` and `Usage:`. These are this
-package's Javadoc-family structural fields, not a claim of Scaladoc completeness.
+Document every public or protected class, trait, object, enum, enum case,
+constructor, method, value, variable, type alias, extension, given, and opaque
+type that callers can use with adjacent Scaladoc. Scala visibility includes
+package qualifiers, companions, inherited members, and extension methods; do
+not infer the public boundary from a single keyword.
 
-Scala CLI directives, package/import/annotation preambles, shebangs, `.sc`
-scripts, generated-source conventions, and other preambles are unsupported in
-this version. The profile fails when enabled rather than guessing which source
-item owns a comment.
+Use this order when applicable: Summary, Behavior, `@param`, `@tparam`,
+`@return`, `@throws`, Example, and Notes. Document effect types, ownership,
+variance, implicit/given requirements, concurrency, and known failures only
+when established by the source, types, tests, or project API.
 
-## Native Scala guidance
+## Native documentation examples
 
-Scaladoc documents definitions with `/** ... */` comments. Scala 2/3 language
-features, visibility, companions, extensions, and package structure require a
-compiler-aware parser before public API coverage can be enforced.
+`SKILL.md` supplies the header content; implement it in the leading Scaladoc
+block and attach Scaladoc directly to the callable declaration:
 
-## Current limits
+```scala
+/** Builds the report requested by the caller.
+  *
+  * @param source source accepted by the report workflow
+  * @return the report defined by this API
+  * @throws ReportException when the known report operation fails
+  */
+def build(source: String): Report = ???
+```
 
-Do not infer that this profile runs Scalafmt, sbt, Mill, Scala CLI, compiler
-checks, tests, or Scaladoc. Version, dialect, configuration, and project-root
-discovery remain a later project-aware phase.
+This is syntax only. Use `@tparam`, `@param`, `@return`, and `@throws` only for
+facts established by the type and implementation.
+
+## Layout and review
+
+Use multiline Scaladoc with the Summary first and blank separation between
+logical sections. Keep tags adjacent and match parameter and type-parameter
+names exactly. Do not invent a companion or extension contract.
+
+## Tooling boundaries
+
+Use a Scala compiler-aware adapter for packages, companions, extensions, givens,
+inherited members, and Scala 2/3 visibility. Do not infer or mandate Scalafmt,
+sbt, Mill, Scala CLI, compiler checks, tests, or Scaladoc; select them from the
+target project.

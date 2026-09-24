@@ -2,33 +2,56 @@
 
 Author: Perijn Huijser
 
-## Experimental, opt-in profile
+Load this reference for C# after applying `SKILL.md`.
 
-This profile is disabled by default. It currently checks only a conservative
-leading `///` documentation header for `.cs` files. It has no XML-documentation
-semantic validation, public-member parser, formatter, or detailed verifier yet.
+## File header
 
-## Supported header shape
+Start the file with consecutive `///` lines after an optional BOM and
+whitespace. The header must contain verified `@author`, a one-sentence prose
+Summary, and `Usage:`. Usage must explain the real setup, workflow, exposed
+capabilities, limitations, and result or failure handling that the file proves.
+Do not treat XML tags as a substitute for this file guide.
 
-Start the file with consecutive `///` lines after an optional BOM and whitespace.
-The header must contain the shared house fields `@author` and `Usage:`. Keep its
-claims evidence-based; these labels are this package's structural policy, not a
-claim that they are native C# XML documentation elements.
+## Public declarations
 
-The first version does not skip directives, attributes, generated-file markers,
-or other code before the header. A file with such a preamble fails when this
-opt-in profile is enabled rather than attaching documentation to the wrong
-construct.
+Document every externally visible public or protected type, constructor, method,
+property, field, event, delegate, enum, enum member, and constant with an
+attached `///` XML documentation block. Use `<summary>` first. Use `<param
+name="...">` once for each meaningful parameter, `<returns>` for non-void
+results, `<exception cref="...">` only for known thrown exceptions, and
+`<remarks>` or `<example>` only for verified details. Document generic type
+parameters with `<typeparam>` when their meaning is not self-evident.
 
-## Native C# guidance
+Internal and private members are not public API unless project policy exposes
+them. Partial declarations, generated files, source generators, extension
+methods, inherited members, and nullable annotations require project context.
 
-C# XML documentation uses `///` comments directly before types and members and
-normally uses XML such as `<summary>`. Public-member coverage, XML tag
-completeness, and compiler warning configuration need a Roslyn/compiler-backed
-implementation before this package can enforce them.
+## Native documentation examples
 
-## Current limits
+`SKILL.md` defines header content; render it in leading `///` comments, then use
+XML documentation directly above public declarations:
 
-Do not infer that this profile runs `dotnet format`, `dotnet build`, or XML
-documentation generation. Those commands require a discovered project or
-solution and project-specific policy.
+```csharp
+/// <summary>Builds the report requested by the caller.</summary>
+/// <param name="source">Source accepted by the report workflow.</param>
+/// <returns>The report defined by this API.</returns>
+/// <exception cref="ReportException">Thrown for a known report failure.</exception>
+public static Report Build(string source) => throw new NotImplementedException();
+```
+
+This is syntax only: replace all claims with target facts. Use `<remarks>` or
+`<example>` for established guidance; do not turn the shared header into XML tags.
+
+## Layout and accuracy
+
+Use multiline `///` blocks. Keep `<summary>` as the first content, then separate
+logical XML elements with one blank comment line. Wrap prose inside the XML
+element and keep parameter names exact. Do not claim an exception, nullability,
+threading guarantee, ownership rule, or example that code and tests do not prove.
+
+## Verification boundary
+
+Use a Roslyn or project-owned adapter for public-member discovery, partial types,
+source-generated APIs, and compiler documentation warnings. Select `dotnet
+format`, build, test, and XML documentation settings from the target solution;
+this standard does not invent a project configuration.

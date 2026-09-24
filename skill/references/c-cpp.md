@@ -7,22 +7,24 @@ Load this reference only for C or C++ after applying `SKILL.md`.
 ## File and public-API rules
 
 Use expanded `/** ... */` Doxygen blocks. At the top of each file, place
-`@file <name>` on its own line, then the shared author, summary, and Usage
-content. Use `@author` for the verified author and `@brief` for a concise
-summary. Under Usage, keep the shared **Core principle**, **Setup**,
-**Workflow**, **API guide**, and **Worked example** labels wherever they apply;
-use `@code` / `@endcode` for a runnable example only when the project API
-establishes it. Do not add an Includes list or an API inventory disguised as
-`@details`.
+`@file <name>` on its own line, then the verified author, concise `@brief`, and a
+file-specific Usage guide. Usage has no mandatory subsection labels: choose
+readable prose, headings, and code examples that explain what this file really
+provides, how callers configure and use it, what it cannot do, and how callers
+handle results or known failures. Use `@code` / `@endcode` only when the project
+API establishes a complete useful workflow. Do not add an Includes list or an
+API inventory disguised as `@details`.
 
 Public declarations need a non-empty `@brief`. Document every named parameter
 exactly once with `@param[in]`, `@param[out]`, or `@param[in,out]`. Non-`void`
 APIs need an accurate `@return` or `@retval`. Use `@throw`, `@code` /
 `@endcode`, and `@note` only for known errors, examples, and caveats.
 
-The write guard mechanically requires a leading Doxygen header with `@author`
-and `Usage:`. Parameter directions, return contracts, tag layout, and semantic
-truth need review because the guard does not parse C or C++ declarations.
+The write guard mechanically requires the leading Doxygen header, including
+`@file`, `@author`, non-empty `@brief`, and the shared Usage labels. It also
+checks recognized externally visible function declarations for attached
+non-empty `@brief` text, exactly-once directed parameters, and known non-void
+returns. Complex project-specific API surfaces remain adapter responsibilities.
 
 ## Documentation-shape example
 
@@ -37,13 +39,32 @@ from the target header and implementation.
  * @brief Declares label normalization for case-insensitive comparison.
  *
  * Usage:
- *   Core principle: Keep normalization behind one documented API.
- *   Setup: Include "label_normalizer.hpp" in callers that compare labels.
- *   Workflow: Pass source text and use the returned normalized label.
- *   API guide: normalize_label returns one normalized string for each input.
- *   Worked example:
+ *   Getting started: Include "label_normalizer.hpp" and link the implementation
+ *   that defines normalize_label. The declaration accepts a string view, so
+ *   callers may pass a string literal or an existing string without transferring
+ *   it.
+ *
+ *   Calling the API: Pass the candidate label, retain the returned string for
+ *   lookup or comparison, and preserve the original input when it is needed for
+ *   logging. The returned value owns normalized text; the input view is not
+ *   modified.
+ *
+ *   Boundaries and failures: This function has no error channel. Whitespace-only
+ *   or otherwise unexpected input remains a normal value and must be handled by
+ *   the caller's validation policy.
+ *
+ *   Complete workflow: Normalize a user-provided label before looking it up,
+ *   then distinguish a missing lookup result from a successful match.
  *   @code{.cpp}
- *   const auto label = normalize_label("  Ready ");
+ *   #include "label_normalizer.hpp"
+ *   #include <string>
+ *   #include <unordered_map>
+ *
+ *   const std::unordered_map<std::string, int> states{{"ready", 1}};
+ *   const auto key = normalize_label("  Ready ");
+ *   const auto found = states.find(key);
+ *   const bool recognized = found != states.end();
+ *   // Handle `recognized` and `found->second` according to the caller's policy.
  *   @endcode
  */
 

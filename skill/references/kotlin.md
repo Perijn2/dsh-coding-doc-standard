@@ -2,30 +2,56 @@
 
 Author: Perijn Huijser
 
-## Experimental, opt-in profile
+Load this reference for Kotlin after applying `SKILL.md`.
 
-This profile is disabled by default. It currently checks only a leading
-`/** ... */` structural header for `.kt` files. It has no KDoc semantic
-validation, public-declaration parser, formatter, or detailed verifier yet.
+## File and public-API rules
 
-## Supported header shape
+Start with an expanded `/** ... */` file header after optional BOM and
+whitespace. The header must contain verified `@author`, a one-sentence prose
+Summary, and `Usage:`. File annotations (`@file:`), scripts, and other
+preambles require project-specific ownership policy.
 
-Start the file with an expanded `/** ... */` block after an optional BOM and
-whitespace. The block must contain the shared house fields `@author` and
-`Usage:`. Every documented behavior must be established by the source and tests.
+KDoc uses `/** ... */` directly before public declarations. Document public
+classes, interfaces, objects, type aliases, functions, properties, constructors,
+and enum entries. Kotlin declarations are public by default; include protected
+members of public types when they form a documented inheritance contract. Do
+not classify `internal` or `private` declarations as public without evidence.
 
-Kotlin file annotations such as `@file:`, scripts (`.kts`), and other preambles
-are intentionally unsupported in this first version. The profile fails when
-enabled instead of guessing which block owns the file-level contract.
+Use this order and omit unknown sections: Summary, Behavior, `@param`,
+`@property`, `@return`, `@throws`, `@sample`, and Notes. The Summary is first
+and ends with a period. Document meaningful inputs, results, state effects,
+known failures, lifecycle constraints, suspension, nullability, and ownership
+only when implemented or tested.
 
-## Native Kotlin guidance
+## Native documentation examples
 
-KDoc uses `/** ... */`, Markdown, and language-specific tags around Kotlin
-declarations. Public API coverage needs a Kotlin-aware parser/compiler model;
-this profile does not infer it from `public` text or a regular expression.
+`SKILL.md` supplies the header content; implement it in a leading KDoc block and
+attach KDoc directly to the public declaration:
 
-## Current limits
+```kotlin
+/**
+ * Builds the report requested by the caller.
+ *
+ * @param source Source accepted by the report workflow.
+ * @return The report defined by this API.
+ * @throws ReportException When the known report operation fails.
+ */
+fun build(source: String): Report = error("sample only")
+```
 
-Do not infer that this profile runs ktlint, ktfmt, Dokka, Gradle, or Kotlin
-compiler checks. Tool selection, versions, rulesets, and project-root discovery
-remain a later evidence-based phase.
+This demonstrates KDoc syntax only. Use `@property`, `@receiver`, `@sample`,
+and `@throws` only when their contents are established.
+
+## Layout and review
+
+Use expanded KDoc, not one-line required comments. Keep the Summary first and
+separate tag groups with one blank documentation line. Match parameter,
+property, and receiver names exactly. Do not infer coroutine behavior, thread
+safety, nullability, exceptions, or examples from names alone.
+
+## Tooling boundaries
+
+Use a Kotlin compiler or project adapter for visibility, expect/actual,
+generated API, and module semantics. Do not infer or mandate `ktlint`, `ktfmt`,
+Dokka, Gradle, compiler checks, or specific versions; select them from the
+target project.

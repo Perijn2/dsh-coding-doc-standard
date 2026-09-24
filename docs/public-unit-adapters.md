@@ -14,9 +14,40 @@ virtual overlay is responsible for constructing and cleaning it up.
 
 ## Enablement
 
-Each adapter is disabled by default. Add both a public-unit flag and an adapter
-configuration to the durable policy. An enabled language without a valid adapter
-fails closed.
+Each project adapter is disabled by default and optional. Tree-sitter provides the
+baseline declaration-documentation check for supported language profiles without
+an adapter. Configure an adapter only when a project needs compiler-level exports,
+visibility, generated-source, macro, or re-export semantics. Once configured, an
+unavailable, invalid, failing, or timed-out adapter fails closed.
+
+This package includes native-tool adapters for Rust and C/C++, but they are
+explicitly configured. The pre-write checker does not guess a compiler, infer
+include paths, or invoke Clang/Doxygen without a project-owned adapter.
+
+The Rust and project-configured C/C++ adapters remain available as explicit
+adapter commands:
+
+```json
+{
+  "publicUnitDocs": { "rust": true, "cCpp": true },
+  "publicUnitAdapters": {
+    "rust": {
+      "command": "node",
+      "args": ["scripts/rust-public-unit-adapter.mjs"]
+    },
+    "cCpp": {
+      "command": "node",
+      "args": ["scripts/cpp-public-unit-adapter.mjs"]
+    }
+  }
+}
+```
+
+The Rust adapter invokes `rustdoc --deny missing_docs` against an isolated
+candidate. The C/C++ adapter invokes Doxygen against an isolated candidate; its
+coverage is limited by the installed Doxygen version and project include/config
+requirements. When a project has Clang or a richer Doxygen configuration, prefer
+an adapter owned by that project for complete public-surface semantics.
 
 ```json
 {

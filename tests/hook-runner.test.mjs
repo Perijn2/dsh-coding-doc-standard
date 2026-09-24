@@ -1,4 +1,4 @@
-/**
+﻿/**
  * @module hook-runner-tests
  * @author Perijn Huijser
  * Verifies pending write and edit candidate construction for hook execution.
@@ -80,10 +80,20 @@ test("rejects edits whose old text is not unique", async () => {
 	});
 });
 
+const formatterPolicy = {
+	...loadPolicy(),
+	formatOnWrite: true,
+	formatPython: true,
+	formatTypescriptJavascript: true,
+	formatDockerCompose: true,
+};
+
 test("selects only pinned fast formatter profiles", () => {
-	const policy = loadPolicy();
+	const policy = formatterPolicy;
 	assert.equal(formatterProfile("example.py", policy), "python");
 	assert.equal(formatterProfile("example.ts", policy), "typescriptJavascript");
+	assert.equal(formatterProfile("example.tsx", policy), "typescriptJavascript");
+	assert.equal(formatterProfile("example.jsx", policy), "typescriptJavascript");
 	assert.equal(formatterProfile("compose.yaml", policy), "dockerCompose");
 	assert.equal(
 		formatterProfile("example.rs", { ...policy, formatRust: false }),
@@ -157,19 +167,15 @@ export default class Example {}
 	);
 });
 
-test("fails closed only for enabled project public-unit adapters", async () => {
+test("skips unconfigured optional project public-unit adapters", async () => {
 	const candidate = { path: "example.go", content: "package example\n" };
-	assert.deepEqual(await checkProjectPublicUnits(candidate, loadPolicy()), []);
-	const enabled = {
+	const policy = {
 		...loadPolicy(),
 		publicUnitDocs: { go: true },
 		publicUnitAdapters: {},
 	};
-	const failures = await checkProjectPublicUnits(candidate, enabled);
-	assert.equal(failures.length, 1);
-	assert.match(failures[0], /go is enabled but not configured/);
+	assert.deepEqual(await checkProjectPublicUnits(candidate, policy), []);
 });
-
 test("normalizes project adapter violations from pending candidate JSON", async () => {
 	const adapterProgram = `let input = "";
 process.stdin.on("data", (chunk) => input += chunk);
@@ -200,6 +206,45 @@ process.stdin.on("end", () => {
 	);
 });
 
+test("uses rustdoc as a native Rust public-unit adapter", async () => {
+	const policy = {
+		...loadPolicy(),
+		publicUnitDocs: { rust: true },
+		publicUnitAdapters: {
+			rust: {
+				command: process.execPath,
+				args: ["scripts/rust-public-unit-adapter.mjs"],
+				cwd: process.cwd(),
+			},
+		},
+	};
+	const failures = await checkProjectPublicUnits(
+		{ path: "example.rs", content: "pub fn run() {}\n" },
+		policy,
+	);
+	assert.ok(failures.length >= 1);
+	assert.match(failures[0], /Missing native rustdoc documentation/);
+});
+
+test("uses Doxygen as a native C/C++ public-unit adapter", async () => {
+	const policy = {
+		...loadPolicy(),
+		publicUnitDocs: { cCpp: true },
+		publicUnitAdapters: {
+			cCpp: {
+				command: process.execPath,
+				args: ["scripts/cpp-public-unit-adapter.mjs"],
+				cwd: process.cwd(),
+			},
+		},
+	};
+	const failures = await checkProjectPublicUnits(
+		{ path: "example.h", content: "int add(int left, int right);\n" },
+		policy,
+	);
+	assert.ok(failures.length >= 1);
+	assert.match(failures[0], /Missing native Doxygen documentation/);
+});
 test("fails closed for malformed and failing project adapters", async () => {
 	const base = { ...loadPolicy(), publicUnitDocs: { go: true } };
 	const malformed = await checkProjectPublicUnits(
@@ -235,29 +280,52 @@ test("accepts a rustfmt-formatted Rust candidate when the opt-in profile is enab
 });
 
 test("blocks a Python candidate that Ruff would reformat", async () => {
-	const message = await checkFormatting({
-		path: "example.py",
-		content: "value=1\n",
-	});
+	const message = await checkFormatting(
+		{
+			path: "example.py",
+			content: "value=1\n",
+		},
+		formatterPolicy,
+	);
 	assert.match(message, /Ruff 0\.16\.6/);
 });
 
 test("accepts a Ruff-formatted Python candidate", async () => {
 	assert.equal(
-		await checkFormatting({ path: "example.py", content: "value = 1\n" }),
+		await checkFormatting(
+			{ path: "example.py", content: "value = 1\n" },
+			formatterPolicy,
+		),
 		null,
 	);
 });
 
+test("reports formatter invocation details when Biome fails", async () => {
+	const message = await checkFormatting(
+		{ path: "broken.ts", content: "export const =\n" },
+		formatterPolicy,
+	);
+	assert.match(message, /Executable:/);
+	assert.match(message, /Arguments:/);
+	assert.match(message, /Exit:/);
+	assert.match(message, /Formatter output:/);
+});
+
 test("blocks TypeScript and Compose candidates that pinned formatters would change", async () => {
-	const typescript = await checkFormatting({
-		path: "example.ts",
-		content: "export const value=1\n",
-	});
-	const compose = await checkFormatting({
-		path: "compose.yaml",
-		content: "services:\n  app:\n   image: example/app\n",
-	});
+	const typescript = await checkFormatting(
+		{
+			path: "example.ts",
+			content: "export const value=1\n",
+		},
+		formatterPolicy,
+	);
+	const compose = await checkFormatting(
+		{
+			path: "compose.yaml",
+			content: "services:\n  app:\n   image: example/app\n",
+		},
+		formatterPolicy,
+	);
 	assert.match(typescript, /@biomejs\/biome 2\.5\.12/);
 	assert.match(compose, /prettier 3\.9\.6/);
 });

@@ -1,4 +1,4 @@
-/**
+﻿/**
  * @module hook-runner
  * @author Perijn Huijser
  * Builds pending candidates, enforces pinned fast formatting, and checks documentation.
@@ -23,6 +23,7 @@ import { homedir } from "node:os";
 import { basename, dirname, extname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { checkProjectPublicUnits } from "./public-unit-adapter.mjs";
+import { checkTreeSitterPublicUnits } from "./tree-sitter-public-docs.mjs";
 import { checkTypescriptPublicUnits } from "./typescript-public-docs.mjs";
 
 const sourceRoot = dirname(dirname(fileURLToPath(import.meta.url)));
@@ -32,6 +33,20 @@ const defaultsPolicy = join(sourceRoot, "policy", "defaults.json");
 const durableRoot = join(homedir(), ".dsh", "plugins", "coding-doc-standard");
 const durablePolicy = join(durableRoot, "policy.json");
 const ruffVersion = "0.16.6";
+const treeSitterLanguages = [
+	"go",
+	"csharp",
+	"java",
+	"kotlin",
+	"shell",
+	"php",
+	"ruby",
+	"swift",
+	"dart",
+	"haskell",
+	"lua",
+	"scala",
+];
 
 /**
  * Reads effective hook policy from durable state or package defaults.
@@ -42,13 +57,18 @@ export function loadPolicy() {
 	const selected =
 		process.env.CODING_DOC_STANDARD_POLICY ??
 		(existsSync(durablePolicy) ? durablePolicy : defaultsPolicy);
+	let policy;
 	try {
-		return JSON.parse(readFileSync(selected, "utf8"));
+		policy = JSON.parse(readFileSync(selected, "utf8"));
 	} catch {
-		return JSON.parse(readFileSync(defaultsPolicy, "utf8"));
+		policy = JSON.parse(readFileSync(defaultsPolicy, "utf8"));
 	}
+	policy.publicUnitDocs ??= {};
+	for (const language of treeSitterLanguages) {
+		policy.publicUnitDocs[language] = policy.languages?.[language] !== false;
+	}
+	return policy;
 }
-
 /**
  * Builds the proposed content from a DeepSeek Harness write or edit payload.
  *
@@ -93,7 +113,9 @@ export function formatterProfile(path, policy) {
 	const extension = extname(file);
 	if (extension === ".py" && policy.formatPython) return "python";
 	if (
-		[".ts", ".js", ".mjs", ".cjs"].includes(extension) &&
+		[".ts", ".tsx", ".mts", ".cts", ".js", ".jsx", ".mjs", ".cjs"].includes(
+			extension,
+		) &&
 		policy.formatTypescriptJavascript
 	)
 		return "typescriptJavascript";
@@ -174,7 +196,17 @@ export async function checkFormatting(candidate, policy = loadPolicy()) {
 			candidate.content,
 		);
 		if (result.code === 0) return null;
-		return `[doc-standard] Python code must match Ruff ${ruffVersion}. ${result.stderr.trim()}`.trim();
+		const output = (result.stderr || result.stdout).trim();
+		return [
+			`[doc-standard] Ruff ${ruffVersion} could not validate ${candidate.path}.`,
+			`Executable: ${command}`,
+			`Exit: ${result.code ?? "not started"}`,
+			output ? `Formatter output:\n${output}` : "Formatter output: none.",
+			result.error ? `Start error: ${result.error.message}` : null,
+			"Remediation: run npm run provision-tools, then call format_code with language, file_path, and complete content.",
+		]
+			.filter(Boolean)
+			.join("\n");
 	}
 	if (profile === "rust") {
 		const command = process.platform === "win32" ? "rustfmt.exe" : "rustfmt";
@@ -186,8 +218,18 @@ export async function checkFormatting(candidate, policy = loadPolicy()) {
 			false,
 		);
 		if (result.error?.code === "ENOENT") return unavailable("rustfmt");
-		if (result.code !== 0)
-			return `[doc-standard] rustfmt could not format ${candidate.path}. ${result.stderr.trim()}`.trim();
+		if (result.code !== 0) {
+			const output = (result.stderr || result.stdout).trim();
+			return [
+				`[doc-standard] rustfmt could not format ${candidate.path}.`,
+				`Executable: ${command}`,
+				`Exit: ${result.code ?? "not started"}`,
+				output ? `Formatter output:\n${output}` : "Formatter output: none.",
+				result.error ? `Start error: ${result.error.message}` : null,
+			]
+				.filter(Boolean)
+				.join("\n");
+		}
 		return result.stdout === candidate.content
 			? null
 			: `[doc-standard] ${candidate.path} must match rustfmt formatting.`;
@@ -205,11 +247,30 @@ export async function checkFormatting(candidate, policy = loadPolicy()) {
 			? ["format", "--stdin-file-path", candidate.path]
 			: ["--stdin-filepath", candidate.path];
 	const result = await execute(command, args, candidate.content);
-	if (result.code !== 0)
-		return `[doc-standard] ${label} could not format ${candidate.path}. ${result.stderr.trim()}`.trim();
+	if (result.code !== 0) {
+		const output = (result.stderr || result.stdout).trim();
+		const renderedArgs = args
+			.map((argument) => JSON.stringify(argument))
+			.join(" ");
+		return [
+			`[doc-standard] ${label} could not format ${candidate.path}.`,
+			`Executable: ${command}`,
+			`Arguments: ${renderedArgs}`,
+			`Exit: ${result.code ?? "not started"}`,
+			output ? `Formatter output:\n${output}` : "Formatter output: none.",
+			result.error ? `Start error: ${result.error.message}` : null,
+			"Remediation: run npm run provision-tools in coding-doc-standard, then call format_code with language, file_path, and complete content.",
+		]
+			.filter(Boolean)
+			.join("\n");
+	}
 	return result.stdout === candidate.content
 		? null
-		: `[doc-standard] ${candidate.path} must match ${label} formatting.`;
+		: [
+				`[doc-standard] ${candidate.path} must match ${label} formatting.`,
+				`Managed executable: ${command}`,
+				"Call format_code with the matching language, intended file_path, and complete pending content, then retry with formatted_content.",
+			].join("\n");
 }
 
 /**
@@ -271,6 +332,14 @@ export async function runHook(payload) {
 		const publicUnitViolations = checkSourcePublicUnits(candidate, policy);
 		if (publicUnitViolations.length) {
 			console.error(publicUnitViolations.join("\n"));
+			return 2;
+		}
+		const treeSitterViolations = await checkTreeSitterPublicUnits(
+			candidate,
+			policy,
+		);
+		if (treeSitterViolations.length) {
+			console.error(treeSitterViolations.join("\n"));
 			return 2;
 		}
 		const projectViolations = await checkProjectPublicUnits(

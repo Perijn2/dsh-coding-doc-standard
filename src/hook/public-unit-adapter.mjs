@@ -1,4 +1,4 @@
-/**
+﻿/**
  * @module public-unit-adapter
  * @author Perijn Huijser
  * Invokes configured project-owned public documentation adapters safely.
@@ -26,11 +26,14 @@ const LANGUAGE_BY_EXTENSION = {
 	".cs": "csharp",
 	".java": "java",
 	".kt": "kotlin",
+	".sh": "shell",
+	".bash": "shell",
 	".php": "php",
 	".rb": "ruby",
 	".swift": "swift",
 	".dart": "dart",
 	".hs": "haskell",
+	".lua": "lua",
 	".scala": "scala",
 };
 
@@ -71,8 +74,9 @@ export async function checkProjectPublicUnits(candidate, policy) {
 	const language = languageFor(candidate.path);
 	if (!language || !policy.publicUnitDocs?.[language]) return [];
 	const adapter = policy.publicUnitAdapters?.[language];
-	if (!adapter || typeof adapter.command !== "string" || !adapter.command)
-		return [configurationError(language, "is enabled but not configured.")];
+	if (!adapter) return [];
+	if (typeof adapter.command !== "string" || !adapter.command)
+		return [configurationError(language, "has no command configured.")];
 	if (adapter.args !== undefined && !Array.isArray(adapter.args))
 		return [configurationError(language, "has invalid args configuration.")];
 	const timeout = Number.isSafeInteger(adapter.timeoutMs)

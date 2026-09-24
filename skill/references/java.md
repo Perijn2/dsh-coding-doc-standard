@@ -2,30 +2,57 @@
 
 Author: Perijn Huijser
 
-## Experimental, opt-in profile
+Load this reference for Java after applying `SKILL.md`.
 
-This profile is disabled by default. It currently checks only a leading
-`/** ... */` structural header for `.java` files. It has no Javadoc semantic
-validation, public-member parser, formatter, or detailed verifier yet.
+## File header
 
-## Supported header shape
+Start with an expanded `/** ... */` file block after an optional BOM and
+whitespace. The block must contain verified `@author`, a one-sentence prose
+summary, and `Usage:`. Usage is a detailed guide to actual initialization,
+normal call order, capabilities, lifecycle, limitations, known failures, and a
+complete workflow when the source establishes them.
 
-Start the file with an expanded `/** ... */` block after an optional BOM and
-whitespace. The block must contain the shared house fields `@author` and
-`Usage:`. Document only facts established by the target source and tests.
+## Public declarations
 
-This first version does not skip package declarations, annotations, directives,
-or other preambles before the header. It fails explicitly when enabled rather
-than guessing whether an arbitrary block documents the file or a declaration.
+Document every public or protected class, interface, enum, record, annotation,
+constructor, method, field, enum constant, and externally used constant with an
+attached Javadoc block. Begin with a concise summary. Use `@param` once for each
+meaningful parameter, `@return` for non-`void` results, `@throws` only for known
+exceptions, and `@see`, `@example`, or `@implNote` only when verified. Use
+`@param <T>` for generic type parameters whose meaning needs explanation.
 
-## Native Java guidance
+Package exports, inherited members, annotations, modules, sealed hierarchies,
+and generated sources require project context. Private implementation details
+are not public API unless project policy says otherwise.
 
-Javadoc uses `/** ... */` comments for packages, types, and members. Native
-tag completeness and public API coverage require a Java parser/compiler model;
-they are not inferred from this structural header check.
+## Native documentation examples
 
-## Current limits
+`SKILL.md` defines header content; implement it in the leading Javadoc block and
+attach Javadoc directly to each public declaration:
 
-Do not infer that this profile runs Javadoc, DocLint, Maven, Gradle, or a Java
-formatter. Those commands and their strictness settings must be selected from
-the target project's documented build configuration.
+```java
+/**
+ * Builds the report requested by the caller.
+ *
+ * @param source source accepted by the report workflow
+ * @return the report defined by this API
+ * @throws ReportException when the known report operation fails
+ */
+public Report build(String source) { throw new UnsupportedOperationException(); }
+```
+
+This is a syntax illustration only. Use `@param <T>`, `@return`, and `@throws`
+only where the declaration and established contract require them.
+
+## Layout and accuracy
+
+Use multiline Javadoc blocks with the summary first and one blank documentation
+line between prose and tag groups. Keep tags adjacent within a group and match
+parameter and exception names exactly. Do not invent nullability, threading,
+side effects, exceptions, or examples.
+
+## Verification boundary
+
+Use a Java-aware project adapter for public-member and module-graph coverage.
+Select Javadoc, DocLint, Maven or Gradle, formatting, compilation, and tests
+from the target project rather than assuming a build system.

@@ -1,4 +1,4 @@
-/**
+﻿/**
  * @module dsh-integration-tests
  * @author Perijn Huijser
  * Verifies the bundle's live wiring against the real DSH runtime packages.
@@ -47,7 +47,27 @@ const POLICY_KEYS = [
 	"haskell",
 	"lua",
 	"scala",
-	"typescriptJavascriptPublicUnits",
+	...[
+		"rust",
+		"cCpp",
+		"go",
+		"csharp",
+		"java",
+		"kotlin",
+		"shell",
+		"php",
+		"ruby",
+		"swift",
+		"dart",
+		"haskell",
+		"lua",
+		"scala",
+	].flatMap((language) => [
+		`${language}HookCommand`,
+		`${language}HookArgs`,
+		`${language}HookCwd`,
+		`${language}HookTimeoutMs`,
+	]),
 	"formatOnWrite",
 	"formatPython",
 	"formatTypescriptJavascript",
@@ -136,8 +156,14 @@ function createCommandsStub() {
  */
 function createToolsStub() {
 	const guards = [];
+	const registrations = [];
 	return {
 		guards,
+		registrations,
+		register(definition) {
+			registrations.push(definition);
+			return () => registrations.splice(registrations.indexOf(definition), 1);
+		},
 		guard(guard) {
 			guards.push(guard);
 			return () => {
@@ -228,9 +254,42 @@ test("registers the workspace verifier as a DSH command", async () => {
 	assert.match(command.description, /verification/i);
 	assert.equal(
 		command.input.hint,
-		"[paths…] [--optional] [--doxygen Doxyfile]",
+		"[paths\u2026] [--optional] [--doxygen Doxyfile]",
 	);
 	assert.equal(typeof command.handler, "function");
+});
+
+test("registers the managed formatter command", async () => {
+	const command = await waitFor(
+		async () =>
+			commands.registrations.find(({ name }) => name === "code-formatter") ??
+			null,
+		"formatter command registration",
+	);
+	assert.match(command.description, /managed formatter/i);
+	assert.match(command.input.hint, /--python/);
+	assert.equal(typeof command.handler, "function");
+});
+test("registers and executes the format_code agent tool", async () => {
+	const definition = await waitFor(
+		async () =>
+			tools.registrations.find((entry) => entry.name === "format_code"),
+		"format_code registration",
+	);
+	const result = await definition.execute(
+		{
+			language: "typescript",
+			file_path: "pending.ts",
+			content: "export const value=1\n",
+		},
+		{ agent: hookAgent, signal: new AbortController().signal },
+	);
+	assert.equal(result.changed, true);
+	assert.equal(result.formatter, "biome");
+	assert.equal(result.formatted_content, "export const value = 1;\r\n");
+	const rendered = definition.output.render({}, result);
+	assert.match(JSON.stringify(rendered), /formatted_content/u);
+	assert.match(JSON.stringify(rendered), /changed/u);
 });
 
 test("runs the workspace verifier through the DSH command handler", async () => {
@@ -261,12 +320,17 @@ test("persists the effective policy and follows settings changes", async () => {
 		haskell: true,
 		lua: true,
 		scala: true,
-		typescriptJavascriptPublicUnits: true,
+		scalaHookCommand: "scala-doc-adapter",
+		scalaHookArgs: '["--project","."]',
+		scalaHookCwd: "project",
+		scalaHookTimeoutMs: 12_000,
 	});
 	const updated = await waitFor(async () => {
 		const policy = await readDurablePolicy();
 		if (policy?.formatOnWrite !== false) return null;
-		if (!policy?.publicUnitDocs?.typescriptJavascript) return null;
+		if (!policy?.publicUnitDocs?.scala) return null;
+		if (policy?.publicUnitAdapters?.scala?.command !== "scala-doc-adapter")
+			return null;
 		if (
 			!policy.languages?.go ||
 			!policy.languages?.shell ||
@@ -356,6 +420,8 @@ test("enforces the opt-in PHP header through the native guard", async () => {
  * @author Perijn Huijser
  * Usage: Demonstrates an opt-in PHP source header.
  */
+
+/** Documents the Example class. */
 final class Example {}
 `,
 	});

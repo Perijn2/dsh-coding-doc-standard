@@ -26,6 +26,8 @@ const required = [
 	"client.js",
 	"src/hook/run.mjs",
 	"src/hook/checker.py",
+	"scripts/rust-public-unit-adapter.mjs",
+	"scripts/cpp-public-unit-adapter.mjs",
 	"src/policy/defaults.json",
 	"src/policy/tools.json",
 	"src/policy/platform.mjs",

@@ -2,34 +2,71 @@
 
 Author: Perijn Huijser
 
-## Experimental, opt-in profile
+Load this reference for Go after applying `SKILL.md`.
 
-This profile is disabled by default. It currently enforces only a structural
-leading package-documentation header for `.go` files. It has no formatter,
-public-declaration parser, generated-code exclusion policy, or detailed verifier
-yet.
+## Package preamble and header
 
-## Supported header shape
+Place consecutive `//` documentation lines immediately before `package name`.
+A canonical `//go:build` or legacy `// +build` block may precede the header,
+followed by its required blank line. Do not put the package documentation before
+the build constraints.
 
-Place consecutive `//` documentation lines immediately before `package <name>`.
-The block must contain the shared house labels `Author:`, `Summary:`, and
-`Usage:`. Derive every value from the package implementation and tests; do not
-invent a package contract to satisfy the labels.
+`SKILL.md` defines the required header fields and the substance of `Usage:`. In
+Go, write those fields as package documentation:
 
-A canonical initial Go build-constraint block (`//go:build` or legacy
-`// +build`) followed by its required blank separator may appear before the
-package documentation header. Other preambles are not supported by this first
-profile version and fail when the opt-in policy is enabled.
+```go
+// Package labels normalizes the verified labels used by callers.
+//
+// Author: Established Author
+// Summary: Normalizes labels for case-insensitive comparison.
+//
+// Usage:
+//   Import this package, call its documented normalization operation, and handle
+//   its established result or error contract at the caller boundary.
+package labels
+```
 
-## Native Go guidance
+The example is layout only. Replace all claims with facts established by the
+target package. Generated files, package comments separated by other
+preambles, and unsupported build conventions require project policy.
 
-Go's native documentation convention places `//` doc comments immediately
-before the declaration they document. Package documentation belongs immediately
-before `package`; exported-name coverage is intentionally not enforced until a
-Go parser and package-aware policy are implemented.
+## Attach Go documentation to exported declarations
 
-## Current limits
+Go documentation is consecutive `//` lines directly preceding a declaration.
+Exported identifiers begin with an uppercase letter; document additional
+package-facing interfaces only when project policy makes them public. Start the
+comment with the identifier name, as Go documentation conventions expect.
 
-Do not infer that this profile runs `gofmt`, `go vet`, `go test`, or a
-project-level documentation generator. Select and test those project tools in a
-later formatter/verifier phase.
+```go
+// NormalizeLabel returns the canonical form of a caller-provided label.
+//
+// The returned value and any error behavior follow the contract established by
+// this package.
+func NormalizeLabel(label string) string {
+	return strings.ToLower(strings.TrimSpace(label))
+}
+```
+
+Use prose when the signature conveys the input and result. Document non-obvious
+error handling, ownership, mutation, concurrency, or lifecycle behavior only
+when established. For exported types, methods, constants, variables, commands,
+and configuration, attach comments to the declaration callers use; do not add a
+separate API inventory.
+
+## Go-specific writing conventions
+
+- Keep the package comment immediately adjacent to `package`; keep declaration
+  comments immediately adjacent to their declarations.
+- For a named result, describe its meaning rather than restating its Go type.
+  For an error result, state recognized failure behavior only when known.
+- Describe interface contracts at the interface or method that owns them. Do not
+  invent guarantees for implementations, embedding, or nil receivers.
+- Use `ExampleName` test functions only when project tests establish a complete,
+  correct workflow; Go examples may be rendered by `go doc`.
+
+## Tooling boundaries
+
+A project adapter is required for mechanical exported-symbol coverage, build-tag
+resolution, generated-source exclusions, or package-graph semantics. Do not
+infer or mandate `gofmt`, `go vet`, `go test`, `go doc`, or a documentation
+generator; select versions and commands from the target project.

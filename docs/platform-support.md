@@ -4,9 +4,18 @@ Author: Perijn Huijser
 
 ## Supported baseline
 
-The package, documentation checker, and npm-pinned Biome/Prettier formatter
-profiles support every platform that can run Node 20 and Python 3. Ruff is
-provisioned into DSH-owned data on the current platform.
+The package, documentation checker, pinned Tree-sitter WASM runtime and grammars,
+and npm-pinned Biome/Prettier formatter profiles support every platform that can
+run Node 20 and Python 3. Tree-sitter parses pending text in memory and does not
+require target-language SDKs. Ruff is provisioned into DSH-owned data on the
+current platform.
+
+## Native C/C++ tools
+
+C/C++ public-unit adapters are configurable and project-owned. This package does
+not install or select Clang for pre-write enforcement; a project adapter may use
+whatever compiler, include paths, defines, and language standard its project
+requires.
 
 ## Native Doxygen
 

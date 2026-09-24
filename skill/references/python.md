@@ -8,9 +8,10 @@ Load this reference only for Python after applying `SKILL.md`.
 
 Use a multiline module docstring as the first statement in each supported Python
 module. Use the shared `Author:`, `Summary:`, `Usage:`, and optional `Notes:`
-fields. Under `Usage:`, keep the applicable **Core principle**, **Setup**,
-**Workflow**, **API guide**, and **Worked example** labels in that order. Do not
-add an `Includes:` list.
+fields. Usage is a file-specific guide, not a mandatory subsection template:
+include only useful, code-derived guidance about setup, workflow, capabilities,
+limitations, result/error handling, and complete examples when they apply. Do
+not add an `Includes:` list.
 
 Use a multiline triple-quoted docstring as the first statement in every public
 top-level function and class body. Follow PEP 257: begin with a one-sentence
@@ -34,11 +35,26 @@ replace every claim with facts established by the module you document.
 Summary: Normalizes labels for case-insensitive comparison.
 
 Usage:
-    Core principle: Keep normalization in one small pure function.
-    Setup: Import normalize_label from this module.
-    Workflow: Pass a raw label and compare the returned normalized value.
-    API guide: normalize_label accepts a string and returns a normalized string.
-    Worked example: normalize_label("  Ready ") == "ready"
+    Getting started: Import normalize_label before reading a label from a
+        request, file, or command-line argument. The function needs no
+        configuration or lifecycle.
+
+    Using the result: Normalize the raw text, retain the returned string for
+        lookup or comparison, and keep the original value for diagnostics. The
+        function returns new stripped, lowercase text and does not validate it.
+
+    Boundaries and failures: This function has no error channel. Callers decide
+        whether an empty normalized value is acceptable and how an unknown key
+        should be reported.
+
+    Complete workflow: Normalize a lookup key, handle a missing entry, and
+        preserve the original input for the diagnostic message.
+        raw_label = "  Ready "
+        labels = {"ready": "enabled"}
+        normalized = normalize_label(raw_label)
+        state = labels.get(normalized)
+        if state is None:
+            raise LookupError(f"Unknown label: {raw_label!r}")
 """
 
 

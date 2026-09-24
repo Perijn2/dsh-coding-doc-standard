@@ -47,10 +47,11 @@ test("pins pre-write formatter versions in package and policy metadata", () => {
 	assert.equal(policy.formatters.dockerCompose, "prettier@3.9.6");
 });
 
-test("pins the TypeScript compiler parser for opt-in direct-export checks", () => {
+test("pins the TypeScript compiler parser for combined documentation checks", () => {
 	assert.equal(packageJson.dependencies.typescript, "5.9.3");
 	assert.equal(policy.publicUnitDocs.typescriptJavascript, false);
-	assert.match(client, /typescriptJavascriptPublicUnits/);
+	assert.match(client, /key: "typescriptJavascript"/);
+	assert.doesNotMatch(client, /typescriptJavascriptPublicUnits/);
 });
 
 test("pins a checksum-verified Doxygen asset for every supported platform", () => {
@@ -102,7 +103,7 @@ test("resolves the managed Doxygen binary per host and fails closed otherwise", 
 	);
 });
 
-test("enables only provisionable fast formatters on write by default", () => {
+test("enables every documentation profile but only provisionable fast formatters", () => {
 	assert.equal(policy.formatOnWrite, true);
 	assert.equal(policy.formatPython, true);
 	assert.equal(policy.formatTypescriptJavascript, true);
@@ -125,7 +126,7 @@ test("enables only provisionable fast formatters on write by default", () => {
 		"lua",
 		"scala",
 	]) {
-		assert.equal(policy.languages[language], false, `${language}: disabled`);
+		assert.equal(policy.languages[language], true, `${language}: enabled`);
 		assert.equal(
 			policy[`format${language[0].toUpperCase()}${language.slice(1)}`],
 			undefined,
@@ -150,11 +151,13 @@ test("registers formatter controls in the dedicated settings navigation item", (
 	]) {
 		assert.ok(client.includes(field), `missing settings control: ${field}`);
 	}
-	assert.ok(client.includes("Pre-write formatter enforcement"));
-	assert.ok(client.includes("Documentation policy"));
-	assert.ok(client.includes("Fast formatters"));
+	assert.ok(client.includes("Enable pre-write formatter enforcement"));
+	assert.ok(client.includes("Enable coding documentation enforcement"));
+	assert.ok(client.includes("Custom public-unit hook"));
 	assert.ok(client.includes("cds-settings-overview"));
-	assert.ok(client.includes("cds-settings-group"));
+	assert.ok(client.includes("cds-language-card"));
+	assert.ok(client.includes('"details"'));
+	assert.ok(!client.includes("\u00e2\u20ac\u201d"));
 	assert.ok(client.includes('ctx.slots.inject("settings.section"'));
 	assert.ok(client.includes('name: "settings.section"'));
 	assert.ok(client.includes("id: NS"));

@@ -8,10 +8,11 @@ Load this reference only for TypeScript or JavaScript after applying `SKILL.md`.
 
 Use an expanded leading `/** ... */` module block above the first export. Include
 `@module <name>` on its own line, `@author` with a real author, a one-sentence
-prose summary, and a `Usage:` guide. Put the Usage guide in prose or an
-`@remarks` block and keep the shared **Core principle**, **Setup**, **Workflow**,
-**API guide**, and **Worked example** labels wherever they apply. Do not add an
-`Includes` inventory.
+prose summary, and a `Usage:` guide. Put Usage in readable prose or an
+`@remarks` block tailored to this module; there is no mandatory subsection
+label set. Explain the useful setup, workflow, capabilities, limitations,
+result/error handling, and complete examples established by the implementation.
+Do not add an `Includes` inventory.
 
 Use expanded `/** ... */` blocks directly above exported declarations. Document
 every externally meaningful parameter with `@param`. Exported non-`void`
@@ -21,12 +22,13 @@ TypeScript; JavaScript may use JSDoc's optional `{type}` notation when the type
 is not otherwise evident.
 
 The write guard mechanically requires a leading TSDoc/JSDoc header containing
-`@author` and `Usage:`. When the experimental **TypeScript / JavaScript exported
+`@author` and `Usage:`. When the **TypeScript / JavaScript exported
 units** setting is enabled, it also requires an attached `/** ... */` JSDoc block
 for direct top-level exported functions, classes, interfaces, type aliases,
-enums, and variables. It intentionally does not resolve `export *`, named
-re-exports, type-derived API surfaces, or semantic tag completeness; those stay
-project-adapter and review requirements.
+enums, and variables. Exported function parameters require `@param`; non-void
+functions require `@returns`; generators require `@yields`. It intentionally
+does not resolve `export *`, named re-exports, or type-derived API surfaces;
+those remain project-adapter and review requirements.
 
 ## Documentation-shape example
 
@@ -42,11 +44,18 @@ implementation and tests.
  *
  * @remarks
  * Usage:
- *   Core principle: Keep normalization in one pure exported function.
- *   Setup: Import normalizeLabel from this module.
- *   Workflow: Pass raw text and compare the returned normalized label.
- *   API guide: normalizeLabel converts one label without changing the input.
- *   Worked example: normalizeLabel("  Ready ") === "ready".
+ *   Getting started: Import normalizeLabel in the request or parsing layer. The
+ *   function has no configuration, mutable state, or cleanup step.
+ *
+ *   Using the result: Pass raw text, retain the returned string for comparison,
+ *   and keep the original value for diagnostics. Use the result for canonical
+ *   lookup keys, not for user-facing text that must preserve original formatting.
+ *
+ *   Boundaries and failures: The function has no error channel, so callers must
+ *   decide whether an empty result or unknown key is acceptable.
+ *
+ *   Complete workflow: Normalize a request label, check a map, and handle an
+ *   unknown key without losing the original request value.
  */
 
 /**
@@ -58,7 +67,13 @@ implementation and tests.
  *
  * @example
  * ```ts
- * normalizeLabel("  Ready "); // "ready"
+ * const rawLabel = "  Ready ";
+ * const states = new Map([["ready", "enabled"]]);
+ * const state = states.get(normalizeLabel(rawLabel));
+ * if (state === undefined) {
+ * 	throw new Error(`Unknown label: ${rawLabel}`);
+ * }
+ * console.log(state);
  * ```
  */
 export function normalizeLabel(label: string): string {

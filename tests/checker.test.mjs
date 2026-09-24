@@ -1,4 +1,4 @@
-/**
+﻿/**
  * @module checker-tests
  * @author Perijn Huijser
  * Exercises source and Docker Compose documentation-policy fixtures.
@@ -27,11 +27,12 @@ const baseArgs = process.platform === "win32" ? ["-3"] : [];
 const policyDirectory = mkdtempSync(
 	join(tmpdir(), "coding-doc-standard-policy-"),
 );
-const enabledPolicyPath = join(policyDirectory, "first-batch.json");
+const enabledPolicyPath = join(policyDirectory, "all-languages.json");
+const disabledPolicyPath = join(policyDirectory, "disabled-languages.json");
 const enabledPolicy = JSON.parse(
 	readFileSync(join(root, "src", "policy", "defaults.json"), "utf8"),
 );
-for (const language of [
+const additionalLanguages = [
 	"go",
 	"csharp",
 	"java",
@@ -44,9 +45,16 @@ for (const language of [
 	"haskell",
 	"lua",
 	"scala",
-])
-	enabledPolicy.languages[language] = true;
+];
+const disabledPolicy = structuredClone(enabledPolicy);
+for (const language of additionalLanguages)
+	disabledPolicy.languages[language] = false;
 writeFileSync(enabledPolicyPath, `${JSON.stringify(enabledPolicy)}\n`, "utf8");
+writeFileSync(
+	disabledPolicyPath,
+	`${JSON.stringify(disabledPolicy)}\n`,
+	"utf8",
+);
 
 /**
  * Runs the policy checker with one candidate fixture.
@@ -163,6 +171,70 @@ test("accepts a documented TypeScript module header", () => {
 export const value = 1
 `;
 	assert.equal(check("example.ts", content), 0);
+});
+
+test("enforces documentation for TypeScript and JavaScript module variants", () => {
+	const content = `/**
+ * @module example
+ * @author Perijn Huijser
+ * Documents a source module variant.
+ *
+ * Usage: Import the module from a supported caller.
+ */
+export const value = 1;
+`;
+	for (const path of [
+		"example.tsx",
+		"example.mts",
+		"example.cts",
+		"example.jsx",
+	])
+		assert.equal(check(path, content), 0, path);
+});
+
+test("enforces the C/C++ Doxygen file and public API contract", () => {
+	const content = `/**
+ * @file calculator.h
+ * @author Perijn Huijser
+ * @brief Declares calculator operations.
+ *
+ * Usage:
+ *   Core principle: Keep arithmetic behind a small API.
+ *   Setup: Include calculator.h.
+ *   Workflow: Pass operands and use the returned result.
+ *   API guide: add returns the sum of its operands.
+ *   Worked example: add(1, 2) returns 3.
+ */
+
+/**
+ * @brief Adds two integers.
+ *
+ * @param[in] left First operand.
+ * @param[in] right Second operand.
+ *
+ * @return The sum of both operands.
+ */
+int add(int left, int right);
+`;
+	assert.equal(check("calculator.h", content), 0);
+});
+
+test("blocks incomplete C/C++ Doxygen API contracts", () => {
+	const content = `/**
+ * @file calculator.c
+ * @author Perijn Huijser
+ * @brief Declares calculator operations.
+ *
+ * Usage:
+ *   Core principle: Keep arithmetic behind a small API.
+ *   Setup: Include calculator.c.
+ *   Workflow: Pass operands and use the returned result.
+ *   API guide: add returns a result.
+ *   Worked example: Call add with two operands.
+ */
+int add(int left, int right);
+`;
+	assert.equal(check("calculator.c", content), 2);
 });
 
 const FIRST_BATCH_HEADERS = [
@@ -290,9 +362,9 @@ test("blocks enabled first-batch language files without headers", () => {
 		assert.equal(check(path, "value\n", enabledPolicyPath), 2, path);
 });
 
-test("bypasses disabled first-batch language profiles", () => {
+test("bypasses explicitly disabled language profiles", () => {
 	for (const [path] of FIRST_BATCH_HEADERS)
-		assert.equal(check(path, "value\n"), 0, path);
+		assert.equal(check(path, "value\n", disabledPolicyPath), 0, path);
 });
 
 test("supports the documented first-batch preambles only", () => {

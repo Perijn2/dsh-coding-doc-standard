@@ -8,7 +8,11 @@ Author: Perijn Huijser
 under `~/.dsh/plugins/coding-doc-standard/` and registers one native global DSH tool
 guard. That guard covers every agent scope and preset, then synchronously launches
 `src/hook/run.mjs` with a ten-second cap. The runner constructs the pending candidate
-text and invokes the pure Python checker.
+text, invokes the pure Python header checker, and runs parser-backed declaration
+checks against pinned Tree-sitter WASM grammars. The Tree-sitter baseline covers
+Go, C#, Java, Kotlin, Shell, PHP, Ruby, Swift, Dart, Haskell, Lua, and Scala
+without requiring their compiler SDKs. It checks named module declarations and
+direct type members rather than attempting semantic visibility resolution.
 
 ## Policy
 

@@ -1,9 +1,9 @@
 ---
 name: coding-doc-standard
 description: >-
-  Enforces evidence-based documentation and formatter requirements for Python,
-  TypeScript, JavaScript, Rust, C/C++, and Docker Compose. Load only the
-  language references relevant to the task.
+  Enforces evidence-based documentation and formatter requirements across the
+  supported language references. Load only the language references relevant to
+  the task.
 ---
 
 # Coding Documentation Standard
@@ -21,18 +21,18 @@ a multi-language task.
 | Rust | [references/rust.md](references/rust.md) |
 | C / C++ | [references/c-cpp.md](references/c-cpp.md) |
 | Docker Compose | [references/docker-compose.md](references/docker-compose.md) |
-| Go (experimental, opt-in, header-only) | [references/go.md](references/go.md) |
-| C# (experimental, opt-in, header-only) | [references/csharp.md](references/csharp.md) |
-| Java (experimental, opt-in, header-only) | [references/java.md](references/java.md) |
-| Kotlin (experimental, opt-in, header-only) | [references/kotlin.md](references/kotlin.md) |
-| Shell (experimental, opt-in, header-only) | [references/shell.md](references/shell.md) |
-| PHP (experimental, opt-in, header-only) | [references/php.md](references/php.md) |
-| Ruby (experimental, opt-in, header-only) | [references/ruby.md](references/ruby.md) |
-| Swift (experimental, opt-in, header-only) | [references/swift.md](references/swift.md) |
-| Dart (experimental, opt-in, header-only) | [references/dart.md](references/dart.md) |
-| Haskell (experimental, opt-in, header-only) | [references/haskell.md](references/haskell.md) |
-| Lua (experimental, opt-in, header-only) | [references/lua.md](references/lua.md) |
-| Scala (experimental, opt-in, header-only) | [references/scala.md](references/scala.md) |
+| Go | [references/go.md](references/go.md) |
+| C# | [references/csharp.md](references/csharp.md) |
+| Java | [references/java.md](references/java.md) |
+| Kotlin | [references/kotlin.md](references/kotlin.md) |
+| Shell | [references/shell.md](references/shell.md) |
+| PHP | [references/php.md](references/php.md) |
+| Ruby | [references/ruby.md](references/ruby.md) |
+| Swift | [references/swift.md](references/swift.md) |
+| Dart | [references/dart.md](references/dart.md) |
+| Haskell | [references/haskell.md](references/haskell.md) |
+| Lua | [references/lua.md](references/lua.md) |
+| Scala | [references/scala.md](references/scala.md) |
 
 ## The hard rule: establish facts or ask
 
@@ -59,22 +59,24 @@ matches the target implementation.
 
 ### File or module header
 
-Every supported source file begins with one native multiline documentation
+Every supported source file begins with a shebang if requierd followed by one native multiline documentation
 header. Docker Compose uses a leading YAML-comment header instead. Keep these
 fields in order:
 
-1. **Author** — a real, established author; never guessed.
-2. **Summary** — one sentence describing the file or module responsibility.
-3. **Usage** — an evidence-based guide for a new caller or operator. Cover each
-   applicable part in this order:
-   - **Core principle** — the design model and responsibility the file owns.
-   - **Setup** — the real import, include, configuration, or initialization.
-   - **Workflow** — normal ordering, state changes, side effects, and cleanup.
-   - **API guide** — public entry points grouped by task and how their results
-     are used; do not duplicate declaration-level contracts.
-   - **Worked example** — an end-to-end primary workflow that handles a real
-     result or a known failure when the implementation defines one.
-4. **Notes** — optional; omit it when there is no verified operational caveat.
+1. **Author** - a real, established author; never guessed.
+2. **Summary** - one sentence describing the file or module responsibility.
+3. **Usage** - a detailed, evidence-based guide for a new caller or operator.
+   Usage is not a fixed five-part template. Choose native prose, headings, and
+   examples that materially help someone use this specific file. Depending on
+   the implementation, explain its real responsibility, setup and prerequisites,
+   normal workflow and lifecycle, capabilities and limitations, public APIs by
+   task, result/error handling, cleanup, and a complete worked workflow. Include
+   only the topics that add value; omit inapplicable topics rather than forcing
+   empty labels. A one-expression toy example is insufficient when the file
+   exposes setup, state, cleanup, multiple APIs, or operational constraints.
+   Every claim must be established by the implementation, tests, configuration,
+   or project owner; never invent detail to make the guide look complete.
+4. **Notes** - optional; omit it when there is no verified operational caveat.
 
 Do not add an `Includes` inventory. It duplicates declarations and becomes
 stale; the task-oriented API guide is the durable replacement.
@@ -85,13 +87,13 @@ Document every public function, method, class, struct, trait, enum, exported
 constant, or externally linked API in its language-native form. Keep only
 sections whose content is known:
 
-1. **Summary** — first content line; one sentence ending in a period.
-2. **Behavior** — when the name and signature do not already make it clear.
-3. **Parameters** — each externally meaningful input.
-4. **Returns** — meaningful result, ownership, or state effect.
-5. **Errors** — only known thrown, returned, or reported failures.
-6. **Example** — only when a small correct usage is derivable.
-7. **Notes** — verified caveats, invariants, concurrency, or safety details.
+1. **Summary** - first content line; one sentence ending in a period.
+2. **Behavior** - when the name and signature do not already make it clear.
+3. **Parameters** - each externally meaningful input.
+4. **Returns** - meaningful result, ownership, or state effect.
+5. **Errors** - only known thrown, returned, or reported failures.
+6. **Example** - only when a small correct usage is derivable.
+7. **Notes** - verified caveats, invariants, concurrency, or safety details.
 
 Stale documentation is a review blocker. Omit an empty section; never fabricate
 text merely to satisfy a template.
@@ -116,9 +118,9 @@ Documentation is prose for people first.
 
 The write guard mechanically blocks missing leading documentation headers for
 all supported source families, missing Python public-unit docstrings, and
-incomplete Compose root or service comments. When the experimental TypeScript /
-JavaScript exported-units setting is enabled, it also blocks direct top-level
-exports without an attached expanded JSDoc block. Compiler-dependent profiles
+incomplete Compose root or service comments. When the TypeScript / JavaScript
+exported-units setting is enabled, it also blocks direct top-level exports
+without an attached expanded JSDoc block. Compiler-dependent profiles
 can use an explicitly configured project adapter that receives the pending
 candidate without writing it to disk; an enabled adapter mode fails closed when
 its adapter cannot provide structured results. No guard can determine whether a
@@ -133,6 +135,31 @@ Formatter policy is intentionally split by tool capability:
   project-provided `clang-format` and `clang-tidy`; Doxygen is pinned separately
   for project-level documentation checks.
 
+Before calling `write` or `edit` for Python, TypeScript, JavaScript, or Docker
+Compose, call the DSH-managed `format_code` tool with the complete pending UTF-8
+content. Do not search `PATH`, package directories, or global installations:
+
+```json
+{
+  "language": "typescript",
+  "file_path": "src/module.ts",
+  "content": "export const value=1\n"
+}
+```
+
+Use the returned `formatted_content` as the complete write candidate. For edits,
+construct and format the complete post-edit file rather than formatting only
+`new_string`. `file_path` selects the formatter parser and project configuration;
+the destination does not need to exist. Optional `formatter_args` is a string
+array of native formatter flags.
+
+Humans can use `/code-formatter` for existing files or pending content. Pending
+slash-command content accepts simple quoted `--content-utf8` text or robust
+`--content-base64 <base64>` data. The aliases `--ruff`, `--biome`, and
+`--prettier` are accepted. If a managed formatter is unavailable, follow the
+reported expected path and run `npm run provision-tools` in the
+coding-doc-standard package.
+
 Use the applicable reference for exact tools, commands, and document syntax.
 
 ## Review checklist
@@ -143,10 +170,12 @@ non-required detail as **major** and layout-only deviations as **minor**.
 
 1. Does the file begin with Author, Summary, and complete applicable Usage?
 2. Is every factual statement established by code, configuration, tests, or the
-   user — including author and examples?
-3. Does Usage explain setup, workflow, task-oriented APIs, and an end-to-end
-   usage when they apply?
-4. Does each public unit have an accurate summary and all known contract detail?
+   user - including author and examples?
+3. Does Usage explain the real setup, workflow, lifecycle, task-oriented APIs,
+   limitations, and an end-to-end usage when they apply?
+4. Is the Worked example a complete workflow rather than a trivial isolated
+   expression, and does it show result or known-failure handling when applicable?
+5. Does each public unit have an accurate summary and all known contract detail?
 5. Are empty sections omitted and `Includes` inventories absent?
 6. Is the language-native layout readable and consistently spaced?
 7. Did the matching formatter and detailed verification run where available?

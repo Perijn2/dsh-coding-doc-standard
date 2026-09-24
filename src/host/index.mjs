@@ -1,4 +1,4 @@
-/**
+﻿/**
  * @module coding-doc-standard-host
  * @author Perijn Huijser
  * Mounts native global pre-write enforcement and persistent settings for the coding documentation standard.
@@ -21,13 +21,140 @@ import { mkdir, readFile, rename, writeFile } from "node:fs/promises";
 import { homedir } from "node:os";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
+import { defineTool } from "@deepseek-ai/dsh-tools";
+import { runFormatterCommand } from "../formatter/command.mjs";
 
+/**
+ * Identifies the coding documentation standard plugin.
+ */
 export const name = "coding-doc-standard";
+
+/**
+ * Declares the host services required by the plugin.
+ */
 export const inject = ["commands", "tools"];
 
 const packageRoot = dirname(dirname(dirname(fileURLToPath(import.meta.url))));
 const defaultsPath = join(packageRoot, "src", "policy", "defaults.json");
 const statePath = join(homedir(), ".dsh", "plugins", name, "policy.json");
+const adapterLanguages = [
+	"rust",
+	"cCpp",
+	"go",
+	"csharp",
+	"java",
+	"kotlin",
+	"shell",
+	"php",
+	"ruby",
+	"swift",
+	"dart",
+	"haskell",
+	"lua",
+	"scala",
+];
+
+/**
+ * Builds the flat settings-field prefix for a language hook.
+ *
+ * @param {string} language - Policy language key.
+ * @returns {string} Flat settings-field prefix.
+ */
+function hookPrefix(language) {
+	return `${language}Hook`;
+}
+
+/**
+ * Reads one language's editable hook values from durable policy.
+ *
+ * @param {Record<string, unknown>} policy - Effective policy configuration.
+ * @param {string} language - Policy language key.
+ * @returns {Record<string, string | number>} Flat settings values.
+ */
+function hookSettings(policy, language) {
+	const prefix = hookPrefix(language);
+	const adapter = policy.publicUnitAdapters?.[language] ?? {};
+	const saved = policy.hookSettings?.[language] ?? {};
+	return {
+		[`${prefix}Command`]: saved.command ?? adapter.command ?? "",
+		[`${prefix}Args`]:
+			saved.args ?? (adapter.args ? JSON.stringify(adapter.args) : ""),
+		[`${prefix}Cwd`]: saved.cwd ?? adapter.cwd ?? "",
+		[`${prefix}TimeoutMs`]: saved.timeoutMs ?? adapter.timeoutMs ?? 10_000,
+	};
+}
+
+/**
+ * Builds Schemastery fields for every exposed custom hook value.
+ *
+ * @param {object} schemaTools - Schemastery module.
+ * @param {Record<string, unknown>} policy - Effective policy configuration.
+ * @returns {Record<string, object>} Flat Schemastery field dictionary.
+ */
+function adapterSettingsSchema(schemaTools, policy) {
+	return Object.fromEntries(
+		adapterLanguages.flatMap((language) => {
+			const prefix = hookPrefix(language);
+			const current = hookSettings(policy, language);
+			return [
+				[
+					`${prefix}Command`,
+					schemaTools.string().default(current[`${prefix}Command`]),
+				],
+				[
+					`${prefix}Args`,
+					schemaTools.string().default(current[`${prefix}Args`]),
+				],
+				[`${prefix}Cwd`, schemaTools.string().default(current[`${prefix}Cwd`])],
+				[
+					`${prefix}TimeoutMs`,
+					schemaTools.number().default(current[`${prefix}TimeoutMs`]),
+				],
+			];
+		}),
+	);
+}
+
+/**
+ * Converts flat settings values into executable hook policy.
+ *
+ * @param {Record<string, unknown>} value - Current settings snapshot.
+ * @returns {{hookSettingsByLanguage: object, publicUnitAdapters: object}} Durable hook policy.
+ */
+function configuredHooks(value) {
+	const hookSettingsByLanguage = {};
+	const publicUnitAdapters = {};
+	for (const language of adapterLanguages) {
+		const prefix = hookPrefix(language);
+		const command = value[`${prefix}Command`]?.trim() ?? "";
+		const argsText = value[`${prefix}Args`]?.trim() ?? "";
+		const cwd = value[`${prefix}Cwd`]?.trim() ?? "";
+		const timeoutMs = value[`${prefix}TimeoutMs`] ?? 10_000;
+		hookSettingsByLanguage[language] = {
+			command,
+			args: argsText,
+			cwd,
+			timeoutMs,
+		};
+		if (!command) continue;
+		let args = [];
+		try {
+			const parsed = argsText ? JSON.parse(argsText) : [];
+			if (
+				Array.isArray(parsed) &&
+				parsed.every((item) => typeof item === "string")
+			)
+				args = parsed;
+		} catch {}
+		publicUnitAdapters[language] = {
+			command,
+			args,
+			...(cwd ? { cwd } : {}),
+			timeoutMs,
+		};
+	}
+	return { hookSettingsByLanguage, publicUnitAdapters };
+}
 
 /**
  * Loads the packaged defaults and any persisted user policy.
@@ -39,7 +166,7 @@ export async function loadPolicy() {
 	if (!existsSync(statePath)) return defaults;
 	try {
 		const override = JSON.parse(await readFile(statePath, "utf8"));
-		return {
+		const policy = {
 			...defaults,
 			...override,
 			languages: { ...defaults.languages, ...override.languages },
@@ -48,6 +175,11 @@ export async function loadPolicy() {
 				...override.publicUnitDocs,
 			},
 		};
+		for (const language of adapterLanguages) {
+			if (!["rust", "cCpp"].includes(language))
+				policy.publicUnitDocs[language] = policy.languages[language] !== false;
+		}
+		return policy;
 	} catch {
 		return defaults;
 	}
@@ -143,9 +275,7 @@ async function installSettings(ctx, policy) {
 			haskell: schemaTools.boolean().default(policy.languages.haskell),
 			lua: schemaTools.boolean().default(policy.languages.lua),
 			scala: schemaTools.boolean().default(policy.languages.scala),
-			typescriptJavascriptPublicUnits: schemaTools
-				.boolean()
-				.default(policy.publicUnitDocs?.typescriptJavascript ?? false),
+			...adapterSettingsSchema(schemaTools, policy),
 			formatOnWrite: schemaTools.boolean().default(policy.formatOnWrite),
 			formatPython: schemaTools.boolean().default(policy.formatPython),
 			formatTypescriptJavascript: schemaTools
@@ -162,8 +292,11 @@ async function installSettings(ctx, policy) {
 		let source = () => ({
 			enabled: policy.enabled,
 			...policy.languages,
-			typescriptJavascriptPublicUnits:
-				policy.publicUnitDocs?.typescriptJavascript ?? false,
+			...Object.fromEntries(
+				adapterLanguages.flatMap((language) =>
+					Object.entries(hookSettings(policy, language)),
+				),
+			),
 			formatOnWrite: policy.formatOnWrite,
 			formatPython: policy.formatPython,
 			formatTypescriptJavascript: policy.formatTypescriptJavascript,
@@ -182,6 +315,8 @@ async function installSettings(ctx, policy) {
 				},
 				onChange: async () => {
 					const value = source();
+					const { hookSettingsByLanguage, publicUnitAdapters } =
+						configuredHooks(value);
 					await savePolicy({
 						...policy,
 						enabled: value.enabled,
@@ -191,9 +326,18 @@ async function installSettings(ctx, policy) {
 						formatRust: value.formatRust,
 						formatDockerCompose: value.formatDockerCompose,
 						blockOnMissingFormatter: value.blockOnMissingFormatter,
+						hookSettings: hookSettingsByLanguage,
+						publicUnitAdapters,
 						publicUnitDocs: {
-							...policy.publicUnitDocs,
-							typescriptJavascript: value.typescriptJavascriptPublicUnits,
+							...Object.fromEntries(
+								adapterLanguages.map((language) => [
+									language,
+									value[language] === true &&
+										(!["rust", "cCpp"].includes(language) ||
+											Boolean(publicUnitAdapters[language])),
+								]),
+							),
+							typescriptJavascript: value.typescriptJavascript === true,
 						},
 						languages: {
 							python: value.python,
@@ -309,7 +453,7 @@ export async function apply(ctx) {
 		description:
 			"Run Coding Documentation Standard verification for this workspace.",
 		input: {
-			hint: "[paths…] [--optional] [--doxygen Doxyfile]",
+			hint: "[paths\u2026] [--optional] [--doxygen Doxyfile]",
 		},
 		handler: (invocation) =>
 			runVerification(
@@ -318,5 +462,93 @@ export async function apply(ctx) {
 				invocation.signal,
 			),
 	});
+	ctx.commands.register({
+		name: "code-formatter",
+		description:
+			"Run a pinned managed formatter without relying on the agent PATH.",
+		input: {
+			hint: "<--python|--typescript|--javascript|--docker-compose> --file <path> [-- flags\u2026]",
+		},
+		handler: (invocation) =>
+			runFormatterCommand(
+				invocation.rawInput,
+				invocation.agent.session.header.cwd ?? process.cwd(),
+				invocation.signal,
+			),
+	});
+	ctx.tools.register(
+		defineTool({
+			name: "format_code",
+			description:
+				"Format complete pending UTF-8 source in memory with the pinned managed formatter before calling write or edit.",
+			parameters: {
+				language: {
+					type: "string",
+					required: true,
+					enum: ["python", "typescript", "javascript", "docker-compose"],
+				},
+				file_path: {
+					type: "string",
+					required: true,
+					description:
+						"Intended workspace-relative path used for parser and configuration selection; the file need not exist.",
+				},
+				content: {
+					type: "string",
+					required: true,
+					description: "Complete pending UTF-8 source text.",
+				},
+				formatter_args: {
+					type: "array",
+					items: { type: "string" },
+				},
+			},
+			output: {
+				schema: {
+					type: "object",
+					additionalProperties: false,
+					properties: {
+						changed: { type: "boolean", required: true },
+						formatted_content: { type: "string", required: true },
+						formatter: { type: "string", required: true },
+					},
+				},
+				render: (_args, value) => [
+					{ type: "text", text: JSON.stringify(value, null, 2) },
+				],
+			},
+			isConcurrencySafe: () => true,
+			async execute(args, exec) {
+				const selectors = {
+					python: "--python",
+					typescript: "--typescript",
+					javascript: "--javascript",
+					"docker-compose": "--docker-compose",
+				};
+				const encoded = Buffer.from(args.content, "utf8").toString("base64");
+				const formatterArgs = (args.formatter_args ?? [])
+					.map((argument) => JSON.stringify(argument))
+					.join(" ");
+				const rawInput = `${selectors[args.language]} --file ${JSON.stringify(args.file_path)} --content-base64 ${encoded}${formatterArgs ? ` -- ${formatterArgs}` : ""}`;
+				const result = await runFormatterCommand(
+					rawInput,
+					exec.agent?.session.header.cwd ?? process.cwd(),
+					exec.signal,
+				);
+				if (result.kind !== "success" || result.formattedContent === undefined)
+					throw new Error(result.text);
+				return {
+					changed: result.formattedContent !== args.content,
+					formatted_content: result.formattedContent,
+					formatter:
+						args.language === "python"
+							? "ruff"
+							: args.language === "docker-compose"
+								? "prettier"
+								: "biome",
+				};
+			},
+		}),
+	);
 	ctx.tools.guard(guardPendingWrite);
 }

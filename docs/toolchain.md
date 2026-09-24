@@ -18,7 +18,37 @@ requires crate and dependency context.
 | C / C++ detailed verification | Doxygen | `1.18.0` | Official GitHub archive; SHA-256 verified for Windows x64, Linux x64, and macOS arm64/x64 |
 
 Run `npm run provision-tools` after package installation. The pre-write setting
-fails closed by default when a required pinned formatter is absent.
+fails closed by default when a required pinned formatter is absent. Provisioning
+first detects both `clang` and `clang++` on PATH or in declared platform paths;
+only when either is missing does it invoke the host package manager. It never
+performs a direct or speculative compiler download. Use `npm run provision-tools
+-- --dry-run` to inspect the package-manager action without changing the host.
+
+## Managed formatter command
+
+`/code-formatter` resolves Ruff from the DSH-owned tool directory and resolves
+Biome or Prettier from this package. It does not depend on the invoking agent's
+`PATH`. Select one formatter profile and one workspace-relative file:
+
+```text
+/code-formatter --python --file test.py -- --line-length 100
+/code-formatter --typescript --file src/main.ts
+/code-formatter --javascript --file src/main.js
+/code-formatter --docker-compose --file compose.yaml
+```
+
+The aliases `--ruff`, `--biome`, and `--prettier` are also accepted. Arguments
+after `--` are passed to the formatter. Existing-file runs write formatting by
+default; a forwarded `--check` requests check-only behavior. For pending content,
+add either `--content-utf8 <quoted-text>` or `--content-base64 <base64>` while
+keeping `--file` as the intended path. Direct UTF-8 is intended for content that
+can be represented safely inside one quoted command argument; Base64 avoids quote
+and escape ambiguity for arbitrary source. The command sends decoded content to
+the selected formatter over stdin and returns formatted source under `Output:`
+without creating the intended file.
+Success and failure responses show the managed executable, effective arguments,
+workspace, exit status, and captured formatter output. Missing-tool responses show
+the expected path and the provisioning command.
 
 ## Pinned Doxygen verification
 
@@ -47,6 +77,9 @@ Doxygen now provides pinned project-level C/C++ documentation verification.
 
 ## Settings
 
-The Settings card exposes a global formatter switch, individual Python,
-TypeScript/JavaScript, and Docker Compose switches, and a fail-closed option for
-missing formatters. Documentation-language toggles remain independent.
+The Settings page exposes one expandable card per language profile. Each card
+uses one documentation control for both file/header and supported public-unit
+checks, shows its formatter control when available, and exposes custom adapter
+command, argument, working-directory, and timeout fields when project-owned
+public-unit hooks are supported. Global controls pause all documentation checks,
+pause all formatter checks, or choose whether unavailable formatters fail closed.

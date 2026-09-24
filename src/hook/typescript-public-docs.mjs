@@ -14,13 +14,26 @@
 import { extname } from "node:path";
 import * as ts from "typescript";
 
-const SUPPORTED_EXTENSIONS = new Set([".ts", ".js", ".mjs", ".cjs"]);
+const SUPPORTED_EXTENSIONS = new Set([
+	".ts",
+	".tsx",
+	".mts",
+	".cts",
+	".js",
+	".jsx",
+	".mjs",
+	".cjs",
+]);
 
 function scriptKind(path) {
 	return (
 		{
 			".ts": ts.ScriptKind.TS,
+			".tsx": ts.ScriptKind.TSX,
+			".mts": ts.ScriptKind.TS,
+			".cts": ts.ScriptKind.TS,
 			".js": ts.ScriptKind.JS,
+			".jsx": ts.ScriptKind.JSX,
 			".mjs": ts.ScriptKind.JS,
 			".cjs": ts.ScriptKind.JS,
 		}[extname(path).toLowerCase()] ?? ts.ScriptKind.Unknown
@@ -59,6 +72,40 @@ function hasAttachedJSDoc(source, node) {
 	return /^\s*$/.test(gap) && !/\n\s*\n/.test(gap);
 }
 
+function documentationText(source, node) {
+	const ranges =
+		ts.getLeadingCommentRanges(source.text, node.getFullStart()) ?? [];
+	const last = ranges.at(-1);
+	return last ? source.text.slice(last.pos, last.end) : "";
+}
+
+function contractViolations(source, node) {
+	if (!ts.isFunctionDeclaration(node)) return [];
+	const documentation = documentationText(source, node);
+	const line =
+		source.getLineAndCharacterOfPosition(node.getStart(source)).line + 1;
+	const failures = [];
+	for (const parameter of node.parameters) {
+		const name = parameter.name.getText(source);
+		if (!new RegExp(`@param\\s+${name}\\b`).test(documentation))
+			failures.push({
+				line,
+				message: `Missing @param documentation for exported parameter '${name}'.`,
+			});
+	}
+	const tag = node.asteriskToken ? "@yields" : "@returns";
+	if (
+		node.asteriskToken ||
+		(node.type !== undefined && node.type.kind !== ts.SyntaxKind.VoidKeyword)
+	) {
+		if (!documentation.includes(tag))
+			failures.push({
+				line,
+				message: `Missing ${tag} documentation for exported function '${declarationName(node)}'.`,
+			});
+	}
+	return failures;
+}
 function violation(source, node, kind, name) {
 	const position = source.getLineAndCharacterOfPosition(node.getStart(source));
 	return {
@@ -105,6 +152,7 @@ export function checkTypescriptPublicUnits(candidate, policy) {
 						declarationName(statement),
 					),
 				);
+			else violations.push(...contractViolations(source, statement));
 			continue;
 		}
 		if (

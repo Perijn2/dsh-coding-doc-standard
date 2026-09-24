@@ -9,11 +9,11 @@ Do not use `x-...` extension fields as a prose-documentation workaround.
 ## Root header
 
 Start a recognized Compose file with YAML comments containing `Author:`,
-`Summary:`, and `Usage:`. Under Usage, include **Core principle**, **Setup**,
-**Workflow**, **API guide**, and **Worked example** in that order. Keep every
-claim operationally true: document the real startup command, required
-configuration, service lifecycle, and caller-visible ports or endpoints only
-when they are established by the Compose file and its documented environment.
+`Summary:`, and `Usage:`. Usage is an operational guide tailored to this stack,
+not a mandatory subsection template. Include only useful, verified guidance
+about configuration, startup and shutdown, service dependencies, caller-visible
+interfaces, limitations, failure handling, and complete command workflows when
+the Compose file establishes them. Keep every claim operationally true.
 
 The write guard requires every root label above. It also requires a top-level
 `services:` mapping; it does not determine whether image tags, environment
@@ -36,16 +36,30 @@ and workflows with facts from the target Compose project before writing.
 # Summary: Runs one local application service for development.
 #
 # Usage:
-#   Core principle: Keep the local service definition close to its runtime needs.
-#   Setup: Provide the environment values required by the service image.
-#   Workflow: Start the service, use its declared endpoint, then stop the stack.
-#   API guide: The app service exposes the configured development endpoint.
-#   Worked example: docker compose up app
+#   Core principle: Keep the application service and its caller-visible runtime
+#   contract together, while leaving secrets and environment-specific values to
+#   the operator.
+#
+#   Setup: Provide APP_ENV before starting the stack. The example publishes the
+#   service's configured port and does not define a database dependency.
+#
+#   Workflow: Start app for local development, inspect the published endpoint,
+#   then stop the service to remove its container. Recreate the service after
+#   changing the image or environment configuration.
+#
+#   API guide: The app service is the stack entry point; its published port is
+#   the only caller-visible interface established by this file.
+#
+#   Worked example: export APP_ENV=development; docker compose up -d app;
+#   curl http://localhost:8080/health; docker compose stop app
 services:
   # Summary: Runs the application process for local development.
-  # Notes: The published port is an example; use the project's verified mapping.
+  # Notes: APP_ENV is passed to the container; the port mapping is the
+  # caller-visible endpoint established by this Compose file.
   app:
     image: example/app
+    environment:
+      APP_ENV: ${APP_ENV}
     ports:
       - "8080:8080"
 ```

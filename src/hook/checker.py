@@ -30,7 +30,11 @@ from typing import Iterable
 SOURCE_EXTENSIONS = {
     ".py",
     ".ts",
+    ".tsx",
+    ".mts",
+    ".cts",
     ".js",
+    ".jsx",
     ".mjs",
     ".cjs",
     ".rs",
@@ -61,6 +65,24 @@ COMPOSE_DEFAULTS = (
     "compose.*.yaml",
     "compose.*.yml",
 )
+PLACEHOLDER_AUTHORS = {
+    "",
+    "todo",
+    "tbd",
+    "fixme",
+    "unknown",
+    "n/a",
+    "none",
+    "agent",
+    "ai",
+    "assistant",
+    "claude",
+    "copilot",
+    "you",
+    "name",
+    "your",
+    "placeholder",
+}
 
 
 @dataclass(frozen=True)
@@ -189,16 +211,7 @@ def _check_compose(path: str, text: str) -> list[Violation]:
     violations = _require_labels(
         path,
         _leading_comment_text(text),
-        (
-            "Author:",
-            "Summary:",
-            "Usage:",
-            "Core principle:",
-            "Setup:",
-            "Workflow:",
-            "API guide:",
-            "Worked example:",
-        ),
+        ("Author:", "Summary:", "Usage:"),
     )
     services_match = re.search(r"(?m)^services:\s*$", text)
     if not services_match:
@@ -311,7 +324,7 @@ def _source_header(path: str, text: str) -> str:
             text,
             re.S,
         )
-    elif suffix in {".ts", ".js", ".mjs", ".cjs"}:
+    elif suffix in {".ts", ".tsx", ".mts", ".cts", ".js", ".jsx", ".mjs", ".cjs"}:
         match = re.match(r"(?:\ufeff)?(?:#![^\n]*\n)?\s*/\*\*(.*?)\*/", text, re.S)
     elif suffix in {".c", ".h", ".cc", ".cpp", ".hpp", ".java", ".kt", ".scala"}:
         match = re.match(r"(?:\ufeff)?\s*/\*\*(.*?)\*/", text, re.S)
@@ -338,15 +351,196 @@ def _source_header(path: str, text: str) -> str:
     return match.group(1) if match else ""
 
 
+def _comment_lines(block: str) -> list[str]:
+    """Summary: Normalizes lines from a native documentation block."""
+    return [line.strip().lstrip("*").strip() for line in block.splitlines()]
+
+
+def _label_has_value(block: str, label: str) -> bool:
+    """Summary: Tests whether a documentation label has non-empty content."""
+    return any(
+        line.lower().startswith(label.lower()) and line[len(label) :].strip()
+        for line in _comment_lines(block)
+    )
+
+
+def _check_cpp_public_units(path: str, text: str) -> list[Violation]:
+    """Summary: Checks documented externally visible C and C++ functions."""
+    declaration = re.compile(
+        r"(?mx)^\s*(?!static\b)"
+        r"(?P<return>(?:extern\s+)?(?:[A-Za-z_]\w*(?:::\w+)?|struct\s+\w+|"
+        r"enum\s+\w+|class\s+\w+|const|volatile|restrict|unsigned|signed|"
+        r"short|long|[*&])+[\t ]+)"
+        r"(?P<name>[A-Za-z_]\w*)\s*\((?P<params>[^(){};]*)\)"
+        r"\s*(?:const\s*)?(?:;|\{)"
+    )
+    blocks = list(re.finditer(r"/\*\*(.*?)\*/", text, re.S))
+    violations: list[Violation] = []
+    for match in declaration.finditer(text):
+        if any(block.start() <= match.start() < block.end() for block in blocks):
+            continue
+        line = text[: match.start()].count("\n") + 1
+        preceding = [block for block in blocks if block.end() <= match.start()]
+        last = preceding[-1] if preceding else None
+        if last is None or text[last.end() : match.start()].strip():
+            violations.append(
+                Violation(
+                    path,
+                    line,
+                    f"Missing Doxygen documentation for public function '{match.group('name')}'",
+                )
+            )
+            continue
+        doc = last.group(1)
+        if not _label_has_value(doc, "@brief"):
+            violations.append(
+                Violation(
+                    path,
+                    line,
+                    f"Missing '@brief' for public function '{match.group('name')}'",
+                )
+            )
+        for raw in match.group("params").split(","):
+            item = raw.strip().split("=", 1)[0].strip()
+            if not item or item in {"void", "..."}:
+                continue
+            names = re.findall(r"[A-Za-z_]\w*", item)
+            if not names:
+                continue
+            name = names[-1]
+            tags = re.findall(rf"@param(?:\[([^\]]+)\])?\s+{re.escape(name)}\b", doc)
+            if not tags:
+                violations.append(
+                    Violation(
+                        path,
+                        line,
+                        f"Missing '@param' documentation for parameter '{name}' in '{match.group('name')}'",
+                    )
+                )
+            elif len(tags) != 1 or tags[0] not in {"in", "out", "in,out"}:
+                violations.append(
+                    Violation(
+                        path,
+                        line,
+                        f"Parameter '{name}' in '{match.group('name')}' must have exactly one @param direction",
+                    )
+                )
+        return_type = re.sub(
+            r"\b(?:extern|const|volatile|restrict)\b",
+            "",
+            match.group("return"),
+        ).strip()
+        if return_type != "void" and not re.search(r"@(return|retval)\b", doc):
+            violations.append(
+                Violation(
+                    path,
+                    line,
+                    f"Missing '@return' or '@retval' for public function '{match.group('name')}'",
+                )
+            )
+    return violations
+
+
+def _check_cpp_named_declarations(path: str, text: str) -> list[Violation]:
+    """Summary: Checks documented C/C++ records, enums, and aliases."""
+    pattern = re.compile(
+        r"(?m)^\s*(?!static\b)(?:(?:struct|class|enum|union|typedef)\s+"
+        r"(?P<name>[A-Za-z_]\w*)|extern\s+[^;()]+\s+(?P<variable>[A-Za-z_]\w*))"
+        r"\s*(?:\{|;|=)"
+    )
+    blocks = list(re.finditer(r"/\*\*(.*?)\*/", text, re.S))
+    violations: list[Violation] = []
+    for match in pattern.finditer(text):
+        if any(block.start() <= match.start() < block.end() for block in blocks):
+            continue
+        line = text[: match.start()].count("\n") + 1
+        preceding = [block for block in blocks if block.end() <= match.start()]
+        last = preceding[-1] if preceding else None
+        name = match.group("name") or match.group("variable")
+        if last is None or text[last.end() : match.start()].strip():
+            violations.append(
+                Violation(
+                    path,
+                    line,
+                    f"Missing Doxygen documentation for public declaration '{name}'",
+                )
+            )
+        elif not _label_has_value(last.group(1), "@brief"):
+            violations.append(
+                Violation(
+                    path, line, f"Missing '@brief' for public declaration '{name}'"
+                )
+            )
+    return violations
+
+
+def _check_rust_public_units(path: str, text: str) -> list[Violation]:
+    """Summary: Checks documentation attached to public Rust items."""
+    pattern = re.compile(
+        r"\bpub\s+(?P<unsafe>unsafe\s+)?(?:async\s+)?"
+        r"(?:fn|struct|enum|trait|const|type)\s+(?P<name>\w+)"
+    )
+    violations: list[Violation] = []
+    for match in pattern.finditer(text):
+        line = text[: match.start()].count("\n") + 1
+        preceding = text[: match.start()].splitlines()
+        docs: list[str] = []
+        for raw in reversed(preceding):
+            if raw.strip().startswith("///"):
+                docs.append(raw.strip()[3:].strip())
+            elif raw.strip():
+                break
+        if not docs:
+            violations.append(
+                Violation(
+                    path,
+                    line,
+                    f"Missing unit doc for public unit '{match.group('name')}'",
+                )
+            )
+        elif match.group("unsafe") and not any(
+            item.lower() == "# safety" for item in docs
+        ):
+            violations.append(
+                Violation(
+                    path,
+                    line,
+                    f"Missing '# Safety' section for public unsafe item '{match.group('name')}'",
+                )
+            )
+    return violations
+
+
+def _check_python_doc_shape(
+    path: str, line: int, doc: str, subject: str
+) -> list[Violation]:
+    """Summary: Checks PEP 257 summary and section spacing."""
+    lines = doc.splitlines()
+    violations: list[Violation] = []
+    if lines and not lines[0].strip().endswith("."):
+        violations.append(
+            Violation(path, line, f"Summary for {subject} must end with a period")
+        )
+    if len(lines) > 1 and lines[1].strip():
+        violations.append(
+            Violation(
+                path,
+                line,
+                f"Summary for {subject} needs a blank line before details",
+            )
+        )
+    return violations
+
+
 def _check_python_public_units(path: str, text: str) -> list[Violation]:
-    """Summary: Checks docstrings on public top-level Python declarations.
+    """Summary: Checks public top-level Python declarations and known contracts.
 
     Parameters:
         path: Candidate Python path.
         text: Complete candidate source content.
 
     Returns:
-        Violations for undocumented public declarations.
+        Violations for undocumented declarations or known signature sections.
     """
 
     try:
@@ -354,19 +548,80 @@ def _check_python_public_units(path: str, text: str) -> list[Violation]:
     except SyntaxError as error:
         return [Violation(path, error.lineno or 1, f"Python syntax error: {error.msg}")]
     violations: list[Violation] = []
-    for node in module.body:
-        if isinstance(
+    for node in ast.walk(module):
+        if not isinstance(
             node, (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef)
-        ) and not node.name.startswith("_"):
-            doc = ast.get_docstring(node, clean=False)
-            if not doc:
+        ) or node.name.startswith("_"):
+            continue
+        doc = ast.get_docstring(node, clean=False)
+        if not doc:
+            violations.append(
+                Violation(
+                    path,
+                    node.lineno,
+                    f"Missing unit doc for public unit '{node.name}'",
+                )
+            )
+            continue
+        violations.extend(
+            _check_python_doc_shape(
+                path, node.lineno, doc, f"public unit '{node.name}'"
+            )
+        )
+        if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)):
+            parameters = [
+                argument.arg
+                for argument in [
+                    *node.args.posonlyargs,
+                    *node.args.args,
+                    *node.args.kwonlyargs,
+                ]
+                if argument.arg not in {"self", "cls"}
+            ]
+            if node.args.vararg and node.args.vararg.arg not in {"self", "cls"}:
+                parameters.append(node.args.vararg.arg)
+            if node.args.kwarg and node.args.kwarg.arg not in {"self", "cls"}:
+                parameters.append(node.args.kwarg.arg)
+            if parameters and "parameters:" not in doc.lower():
                 violations.append(
                     Violation(
                         path,
                         node.lineno,
-                        f"Missing unit doc for public unit '{node.name}'",
+                        f"Missing Parameters section for public unit '{node.name}'",
                     )
                 )
+            if node.returns is not None and "returns:" not in doc.lower():
+                violations.append(
+                    Violation(
+                        path,
+                        node.lineno,
+                        f"Missing Returns section for public unit '{node.name}'",
+                    )
+                )
+    return violations
+
+
+def _check_cpp_documentation(path: str, text: str) -> list[Violation]:
+    """Summary: Validates C/C++ documentation contracts."""
+    header = _source_header(path, text)
+    required = ("@file", "@author", "@brief")
+    violations = _require_labels(path, header, required)
+    if "usage:" not in header.lower() and "@par usage" not in header.lower():
+        violations.append(Violation(path, 1, "Missing 'Usage' in file header"))
+    basename = Path(path).name
+    pattern = rf"(?m)^\s*\*?\s*@file\s+{re.escape(basename)}\s*$"
+    if not re.search(pattern, header):
+        violations.append(
+            Violation(path, 1, f"Missing exact '@file {basename}' in file header")
+        )
+    if not _label_has_value(header, "@author"):
+        violations.append(Violation(path, 1, "Missing '@author' value in file header"))
+    if not _label_has_value(header, "@brief"):
+        violations.append(
+            Violation(path, 1, "Missing non-empty '@brief' in file header")
+        )
+    violations.extend(_check_cpp_public_units(path, text))
+    violations.extend(_check_cpp_named_declarations(path, text))
     return violations
 
 
@@ -401,7 +656,11 @@ def check_content(path: str, text: str, policy: dict | None = None) -> list[Viol
         ".py": "python",
         ".rs": "rust",
         ".ts": "typescriptJavascript",
+        ".tsx": "typescriptJavascript",
+        ".mts": "typescriptJavascript",
+        ".cts": "typescriptJavascript",
         ".js": "typescriptJavascript",
+        ".jsx": "typescriptJavascript",
         ".mjs": "typescriptJavascript",
         ".cjs": "typescriptJavascript",
         ".go": "go",
@@ -420,6 +679,8 @@ def check_content(path: str, text: str, policy: dict | None = None) -> list[Viol
     }.get(suffix, "cCpp")
     if not effective["languages"].get(family, True):
         return []
+    if family == "cCpp":
+        return _check_cpp_documentation(path, text)
     header = _source_header(path, text)
     if family in {"python", "go", "shell", "ruby", "swift", "dart", "haskell", "lua"}:
         violations = _require_labels(path, header, ("Author:", "Summary:", "Usage:"))
@@ -437,6 +698,8 @@ def check_content(path: str, text: str, policy: dict | None = None) -> list[Viol
         violations = _require_labels(path, header, ("Author", "Usage"))
     if suffix == ".py":
         violations.extend(_check_python_public_units(path, text))
+    if suffix == ".rs":
+        violations.extend(_check_rust_public_units(path, text))
     return violations
 
 
