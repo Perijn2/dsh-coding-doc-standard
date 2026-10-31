@@ -1,0 +1,63 @@
+{
+  "schema": "https://dsh.dev/rs/schema/requirement-record.json",
+  "slug": "doc-contract",
+  "generated_by": "dsh-repo-standard P2",
+  "requirement_count": 5,
+  "requirements": [
+    {
+      "id": "REQ-005",
+      "slug": "doc-contract",
+      "priority": "MUST",
+      "ears_pattern": "ubiquitous",
+      "text": "The System shall enforce one language-independent documentation contract that requires an Author field, a brief Summary field, and a brief Description field, and accepts optional Usage, Changelog, and Notes fields.",
+      "implements_adrs": [
+        "ADR-0002"
+      ],
+      "status": "draft"
+    },
+    {
+      "id": "REQ-006",
+      "slug": "doc-contract",
+      "priority": "MUST",
+      "ears_pattern": "ubiquitous",
+      "text": "The System shall accept any brief Summary text without enforcing a sentence count.",
+      "implements_adrs": [
+        "ADR-0002"
+      ],
+      "status": "draft"
+    },
+    {
+      "id": "REQ-007",
+      "slug": "doc-contract",
+      "priority": "MUST",
+      "ears_pattern": "event_driven",
+      "text": "When the Usage field is present, the System shall require the Usage text to reference at least one unit discovered in the file.",
+      "implements_adrs": [
+        "ADR-0002"
+      ],
+      "status": "draft"
+    },
+    {
+      "id": "REQ-008",
+      "slug": "doc-contract",
+      "priority": "MUST",
+      "ears_pattern": "unwanted_behaviour",
+      "text": "If a required header field is absent or empty, then the System shall deny the write and name the missing field.",
+      "implements_adrs": [
+        "ADR-0002"
+      ],
+      "status": "draft"
+    },
+    {
+      "id": "REQ-009",
+      "slug": "doc-contract",
+      "priority": "MUST",
+      "ears_pattern": "ubiquitous",
+      "text": "The System shall enforce the same public-unit contract of a Summary plus Parameters, Returns, and Errors sections where each is meaningful for every supported language.",
+      "implements_adrs": [
+        "ADR-0002"
+      ],
+      "status": "draft"
+    }
+  ]
+}

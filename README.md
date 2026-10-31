@@ -17,9 +17,44 @@ toolchain and the machine-wide skill only — it writes no package link and
 **never changes a profile's `cordis.patch.yml`**.
 
 ```text
-bundle.patch.yml → host plugin → native global tool guard → Node candidate adapter → Python checker
-                                      └──────→ durable policy in ~/.dsh/plugins/
+bundle.patch.yml → host plugin ──── durable policy in ~/.dsh/plugins/
+                     │
+                     └─ async tools/pre-execute
+                          ├─ formatting          pinned formatter
+                          ├─ documentation       Python header checker
+                          ├─ public units        JSDoc and doc comments
+                          ├─ tree-sitter         declared units, 12 languages
+                          └─ project adapter     optional native tool
+                          ▲ concurrent, one shared budget, one aggregated answer
 ```
+
+## How enforcement behaves
+
+The gate is asynchronous and never blocks the host. All applicable checks for one
+pending write run concurrently under a single budget (`validatorTimeoutMs`,
+20000 ms by default), so one round trip reveals the whole picture instead of
+one problem at a time.
+
+- **One denial, every finding.** A blocked write returns a single message: the
+  issue count, the numbered findings, the formatter pointer when formatting is
+  involved, and the rule reference to read.
+- **Nothing is blocked on a check that could not run.** An unreadable file, an
+  ambiguous `old_string` match, an oversized candidate, or a pattern on the
+  ignore list means the write is skipped, not denied. If the budget expires, the
+  write is allowed with a visible notice unless you set `validatorFailOpen` to
+  `false`. Findings that were already found still deny, with a
+  `Not fully checked: …` trailer.
+- **Vendored, generated, minified, and lockfile paths are never blocked.**
+  `ignoredPaths` adds to those defaults; it cannot remove them.
+- **The rules are stated up front.** A short, always-on system-prompt section
+  tells the agent to read the language reference in the
+  `coding-doc-standard` skill and to put the documentation in the same draft
+  as the code. Turn it off with `systemPromptAdvisory: false`.
+- **Widening coverage is a setting.** `matchedTools` accepts extra tool names,
+  including globs such as `mcp__*__write_file`, for write paths beyond the
+  bundled names.
+
+The full knob list is in [`docs/architecture.md`](docs/architecture.md).
 
 ## Supported profiles
 
@@ -32,7 +67,7 @@ bundle.patch.yml → host plugin → native global tool guard → Node candidate
   writes, plus yamllint and `docker compose config -q` during detailed verification.
 - Go, C#, Java, Kotlin, Shell, PHP, Ruby, Swift, Dart, Haskell, Lua, and Scala:
   native source or module headers plus Tree-sitter-backed declaration documentation
-  enabled by default. The guard checks named module declarations and direct type
+  enabled by default. The gate checks named module declarations and direct type
   members regardless of visibility; optional project adapters can add semantic checks.
 
 All supported documentation profiles are enabled by default and can be disabled
@@ -59,12 +94,12 @@ rather than self-linking the profile.
 Then provision the pinned toolchain and the machine-wide skill:
 
 ```text
-node scripts/verify-install.mjs
-node scripts/install.mjs
+node scripts/install/verify-install.mjs
+node scripts/install/install.mjs
 ```
 
 Restart DSH after installation so the bundle's patch layer is composed during
-profile boot. Use `node scripts/install.mjs --dry-run` to preview its mutations.
+profile boot. Use `node scripts/install/install.mjs --dry-run` to preview its mutations.
 Neither step edits a profile's `cordis.patch.yml`.
 
 ## Verify
@@ -78,13 +113,33 @@ Without paths, `npm run verify` checks package completeness. Pass target paths
 for detailed checks, for example `npm run verify -- compose.yaml src/main.py`.
 Use `--optional` to report unavailable external tools without failing.
 
+## Repository layout
+
+```text
+scripts/install/    installation, toolchain provisioning, install verification
+scripts/verify/     detailed verifier and DSH contract checks
+scripts/adapters/   bundled native public-unit adapter templates
+examples/           documented demo files used for manual enforcement probes
+.temp/              transient local scratch space (gitignored, never committed)
+```
+
+`client.js` stays at the package root because DSH discovers the conventional
+client entry there, and `bundle.patch.yml` is the manifest-declared patch path.
+
 ## Pinned pre-write formatters
 
 Python uses Ruff `0.16.6`; TypeScript and JavaScript use `@biomejs/biome`
-`2.5.12`; and Docker Compose uses Prettier `3.9.6`. Agents call the structured
-`format_code` tool with `language`, intended `file_path`, and complete UTF-8
-`content`, then pass its `formatted_content` to `write` or `edit`. The destination
-need not exist and the formatter never writes the candidate.
+`2.5.12`; and Docker Compose uses Prettier `3.9.6`. Agents call
+`write_formatted` with the intended `file_path`, the complete UTF-8 `content`,
+and the `language` it declares: it formats the candidate, documentation-checks
+the formatted bytes, and writes them in one call, answering with a short
+receipt. `format_code` runs the same cycle and never writes, so the formatted
+text comes back for review instead of landing. `language` is required and must
+agree with `file_path` — a `.ts` path declared as `python` is refused instead
+of being formatted with the wrong parser — while a path no managed formatter
+covers (`.md`, `.rs`, anything outside the table above) belongs on the plain
+`write` tool, which still gates it. The destination need not exist, and the
+formatter only ever reads the candidate from standard input.
 
 Humans can invoke the same managed binaries through the slash command:
 

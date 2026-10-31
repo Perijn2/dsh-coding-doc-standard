@@ -1,0 +1,92 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://dsh.dev/rs/schema/decoded-documentation.json",
+  "title": "Decoded documentation",
+  "description": "Language-independent documentation the codec produces and the contract engine validates.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "documentation"
+  ],
+  "properties": {
+    "documentation": {
+      "type": "object",
+      "additionalProperties": true,
+      "properties": {
+        "header": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "author": {
+              "type": "string"
+            },
+            "summary": {
+              "type": "string"
+            },
+            "description": {
+              "type": "string"
+            },
+            "usage": {
+              "type": "string"
+            },
+            "changelog": {
+              "type": "string"
+            },
+            "notes": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "author",
+            "description",
+            "summary"
+          ]
+        },
+        "unit_names": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "unit_docs": {
+          "type": "object",
+          "additionalProperties": true
+        }
+      },
+      "required": [
+        "header"
+      ]
+    }
+  },
+  "x-governed": {
+    "requirements": [
+      "REQ-005",
+      "REQ-006",
+      "REQ-013"
+    ],
+    "adrs": [
+      "ADR-0002",
+      "ADR-0003"
+    ]
+  },
+  "x-authored": {
+    "statements": [
+      "object documentation",
+      "object documentation.header",
+      "string documentation.header.author",
+      "string documentation.header.summary",
+      "string documentation.header.description",
+      "string documentation.header.usage",
+      "string documentation.header.changelog",
+      "string documentation.header.notes",
+      "array documentation.unit_names of string",
+      "object documentation.unit_docs",
+      "required documentation",
+      "required documentation.header",
+      "required documentation.header.author",
+      "required documentation.header.summary",
+      "required documentation.header.description",
+      "closed documentation.header"
+    ]
+  }
+}

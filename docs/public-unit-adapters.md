@@ -33,11 +33,11 @@ adapter commands:
   "publicUnitAdapters": {
     "rust": {
       "command": "node",
-      "args": ["scripts/rust-public-unit-adapter.mjs"]
+      "args": ["scripts/adapters/rust-public-unit-adapter.mjs"]
     },
     "cCpp": {
       "command": "node",
-      "args": ["scripts/cpp-public-unit-adapter.mjs"]
+      "args": ["scripts/adapters/cpp-public-unit-adapter.mjs"]
     }
   }
 }

@@ -1,10 +1,14 @@
+# Dependencies and build output
 node_modules/
 coverage/
+
+# Transient local scratch space (manual probes, throwaway candidates)
+.temp/
+
+# Generated fixture output
 tests/fixtures/cpp-doxygen/build/
+
+# OS and tooling artifacts
 .DS_Store
 *.pyc
 __pycache__/
-
-# Local manual enforcement probes
-/hook-*-test.*
-/rust-prewrite-demo.rs

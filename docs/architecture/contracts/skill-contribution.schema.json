@@ -1,0 +1,62 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://dsh.dev/rs/schema/skill-contribution.json",
+  "title": "Skill contribution",
+  "description": "One pack's skill reference contribution composed into the machine-wide skill.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "contribution"
+  ],
+  "properties": {
+    "contribution": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "pack": {
+          "type": "string"
+        },
+        "title": {
+          "type": "string"
+        },
+        "reference_path": {
+          "type": "string"
+        },
+        "extensions": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        }
+      },
+      "required": [
+        "pack",
+        "reference_path",
+        "title"
+      ]
+    }
+  },
+  "x-governed": {
+    "requirements": [
+      "REQ-002",
+      "REQ-005"
+    ],
+    "adrs": [
+      "ADR-0001"
+    ]
+  },
+  "x-authored": {
+    "statements": [
+      "object contribution",
+      "string contribution.pack",
+      "string contribution.title",
+      "string contribution.reference_path",
+      "array contribution.extensions of string",
+      "required contribution",
+      "required contribution.pack",
+      "required contribution.title",
+      "required contribution.reference_path",
+      "closed contribution"
+    ]
+  }
+}

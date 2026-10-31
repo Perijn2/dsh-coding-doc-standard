@@ -1,0 +1,20 @@
+{
+	"id": "lua",
+	"label": "Lua",
+	"packVersion": "1.0.0",
+	"language": {
+		"name": "Lua",
+		"defaultProfile": "modern"
+	},
+	"profiles": ["modern"],
+	"detect": {
+		"versionFiles": [".lua-version"]
+	},
+	"dependencies": {
+		"units": {
+			"provider": "tree-sitter",
+			"grammar": "lua",
+			"query": "queries/units.scm"
+		}
+	}
+}

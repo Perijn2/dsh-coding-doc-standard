@@ -1,0 +1,81 @@
+{
+  "system_name": "the System",
+  "patterns": [
+    {
+      "id": "ubiquitous",
+      "rule": "always active, no keyword",
+      "regex": "^The System shall .+$",
+      "example": "The System shall resolve the engine only from a plugin-owned location."
+    },
+    {
+      "id": "event_driven",
+      "rule": "response to a triggering event, keyword When",
+      "regex": "^When .+, the System shall .+$",
+      "example": "When a self-update verb is issued against the pinned CLI, the System shall refuse it."
+    },
+    {
+      "id": "state_driven",
+      "rule": "active while a state holds, keyword While",
+      "regex": "^While .+, the System shall .+$",
+      "example": "While the mutation policy is deny, the System shall refuse raw git mutations."
+    },
+    {
+      "id": "unwanted_behaviour",
+      "rule": "response to an undesired condition, keywords If and Then",
+      "regex": "^If .+, then the System shall .+$",
+      "example": "If the vendored binary is missing, then the System shall refuse rather than fall back."
+    },
+    {
+      "id": "optional_feature",
+      "rule": "applies when a feature is included, keyword Where",
+      "regex": "^Where .+, the System shall .+$",
+      "example": "Where the repository declares a docs branch, the System shall keep it rebased."
+    }
+  ],
+  "complex": [
+    {
+      "id": "complex_state_event",
+      "rule": "state precondition plus trigger",
+      "regex": "^While .+, when .+, the System shall .+$",
+      "example": "While the mutation policy is warn, when a raw git mutation is requested, the System shall perform it and journal it."
+    },
+    {
+      "id": "complex_state_unwanted",
+      "rule": "state precondition plus unwanted behaviour",
+      "regex": "^While .+, if .+, then the System shall .+$",
+      "example": "While a feature is open, if its branch is deleted, then the System shall mark the feature orphaned."
+    },
+    {
+      "id": "complex_optional_event",
+      "rule": "optional feature plus trigger",
+      "regex": "^Where .+, when .+, the System shall .+$",
+      "example": "Where commitlint is enabled, when a commit message fails a rule, the System shall reject the commit."
+    }
+  ],
+  "banned_terms": {
+    "description": "Words that make a requirement untestable. A statement containing any of these fails validation regardless of shape.",
+    "values": [
+      "should",
+      "may",
+      "might",
+      "could",
+      "would",
+      "preferably",
+      "ideally",
+      "as needed",
+      "if possible",
+      "etc",
+      "and/or",
+      "appropriately",
+      "properly",
+      "gracefully",
+      "robustly",
+      "easily",
+      "simply",
+      "obviously",
+      "clearly",
+      "soon",
+      "later"
+    ]
+  }
+}

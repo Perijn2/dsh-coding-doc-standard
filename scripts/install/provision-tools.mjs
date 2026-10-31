@@ -9,13 +9,13 @@
  * Usage:
  *   Core principle: Verify exact third-party versions and archive checksums before
  *   a hook or detailed verifier uses them.
- *   Setup: Run npm install, then execute node scripts/provision-tools.mjs; the
+ *   Setup: Run npm install, then execute node scripts/install/provision-tools.mjs; the
  *   host platform selects the pinned Doxygen asset from the manifest.
  *   Workflow: Verify package-pinned JavaScript formatters, install Ruff from its
  *   pinned wheel, download and checksum-verify the host's Doxygen archive, then
  *   verify each version.
  *   API guide: The exported provisionTools function supports installer orchestration.
- *   Worked example: node scripts/provision-tools.mjs --dry-run
+ *   Worked example: node scripts/install/provision-tools.mjs --dry-run
  */
 
 import { execFileSync } from "node:child_process";
@@ -37,9 +37,9 @@ import {
 	resolveDoxygenAsset,
 	resolveDoxygenBinary,
 	supportedDoxygenPlatforms,
-} from "../src/policy/platform.mjs";
+} from "../../src/policy/platform.mjs";
 
-const packageRoot = dirname(dirname(fileURLToPath(import.meta.url)));
+const packageRoot = dirname(dirname(dirname(fileURLToPath(import.meta.url))));
 const dataRoot = join(
 	homedir(),
 	".dsh",

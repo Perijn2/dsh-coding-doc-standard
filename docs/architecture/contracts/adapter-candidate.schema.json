@@ -1,0 +1,66 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://dsh.dev/rs/schema/adapter-candidate.json",
+  "title": "Adapter candidate",
+  "description": "The JSON candidate the gate pipes to external-command providers and npm-function entries on standard input.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "candidate"
+  ],
+  "properties": {
+    "candidate": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "path": {
+          "type": "string"
+        },
+        "content": {
+          "type": "string"
+        },
+        "workspace": {
+          "type": "string"
+        },
+        "pack": {
+          "type": "string"
+        },
+        "profile": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "content",
+        "pack",
+        "path",
+        "profile"
+      ]
+    }
+  },
+  "x-governed": {
+    "requirements": [
+      "REQ-014",
+      "REQ-016",
+      "REQ-028"
+    ],
+    "adrs": [
+      "ADR-0004"
+    ]
+  },
+  "x-authored": {
+    "statements": [
+      "object candidate",
+      "string candidate.path",
+      "string candidate.content",
+      "string candidate.workspace",
+      "string candidate.pack",
+      "string candidate.profile",
+      "required candidate",
+      "required candidate.path",
+      "required candidate.content",
+      "required candidate.pack",
+      "required candidate.profile",
+      "closed candidate"
+    ]
+  }
+}

@@ -1,4 +1,4 @@
-﻿/**
+/**
  * @module checker-tests
  * @author Perijn Huijser
  * Exercises source and Docker Compose documentation-policy fixtures.
@@ -401,7 +401,8 @@ test("leaves unsupported extensions and preambles outside header-only batches", 
  * Usage: Demonstrates a structural header.
  */
 `;
-	assert.equal(check("script.kts", "value\n", enabledPolicyPath), 0);
+	// .kts is a guarded Kotlin script extension now: an undocumented file blocks.
+	assert.equal(check("script.kts", "value\n", enabledPolicyPath), 2);
 	assert.equal(check("script.csx", "value\n", enabledPolicyPath), 0);
 	assert.equal(check("script", "value\n", enabledPolicyPath), 0);
 	assert.equal(
@@ -539,6 +540,68 @@ module Example where
 		),
 		2,
 	);
+});
+
+test("accepts prose Author headers in the tag-style language family", () => {
+	const kotlin = `/**
+ * Author: Perijn Huijser
+ * Usage: Demonstrates a prose-author Kotlin header.
+ */
+class Example
+`;
+	const java = `/**
+ * Author: Perijn Huijser
+ * Usage: Demonstrates a prose-author Java header.
+ */
+class Example {}
+`;
+	assert.equal(check("Example.kt", kotlin, enabledPolicyPath), 0);
+	assert.equal(check("Example.java", java, enabledPolicyPath), 0);
+});
+
+test("accepts a block JSDoc header for C#, Swift, and Dart", () => {
+	const tagHeader = `/**
+ * Author: Perijn Huijser
+ * Usage: Demonstrates a block documentation header.
+ */
+`;
+	const proseHeader = `/**
+ * Author: Perijn Huijser
+ * Summary: Demonstrates a block documentation header.
+ * Usage: Demonstrates a block documentation header.
+ */
+`;
+	assert.equal(
+		check("Example.cs", `${tagHeader}class Example {}\n`, enabledPolicyPath),
+		0,
+	);
+	assert.equal(
+		check(
+			"Example.swift",
+			`${proseHeader}struct Example {}\n`,
+			enabledPolicyPath,
+		),
+		0,
+	);
+	assert.equal(
+		check(
+			"example.dart",
+			`${proseHeader}class Example {}\n`,
+			enabledPolicyPath,
+		),
+		0,
+	);
+});
+
+test("checks Kotlin script headers through the .kts extension", () => {
+	const documented = `/**
+ * Author: Perijn Huijser
+ * Usage: Run the script with its supported arguments.
+ */
+val value = 1
+`;
+	assert.equal(check("script.kts", documented, enabledPolicyPath), 0);
+	assert.equal(check("script.kts", "val value = 1\n", enabledPolicyPath), 2);
 });
 
 test.after(() => rmSync(policyDirectory, { recursive: true, force: true }));

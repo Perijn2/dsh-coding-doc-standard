@@ -11,14 +11,14 @@
  *   Setup: Run after packaging or before linking into a DSH package root.
  *   Workflow: Load package metadata and assert that each declared runtime asset exists.
  *   API guide: The script exits nonzero with a concise missing-asset error.
- *   Worked example: node scripts/verify-install.mjs
+ *   Worked example: node scripts/install/verify-install.mjs
  */
 
 import { existsSync, readFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 
-const root = dirname(dirname(fileURLToPath(import.meta.url)));
+const root = dirname(dirname(dirname(fileURLToPath(import.meta.url))));
 const manifest = JSON.parse(readFileSync(join(root, "package.json"), "utf8"));
 const required = [
 	manifest.dsh?.bundle?.patch,
@@ -26,13 +26,13 @@ const required = [
 	"client.js",
 	"src/hook/run.mjs",
 	"src/hook/checker.py",
-	"scripts/rust-public-unit-adapter.mjs",
-	"scripts/cpp-public-unit-adapter.mjs",
+	"scripts/adapters/rust-public-unit-adapter.mjs",
+	"scripts/adapters/cpp-public-unit-adapter.mjs",
 	"src/policy/defaults.json",
 	"src/policy/tools.json",
 	"src/policy/platform.mjs",
-	"scripts/provision-tools.mjs",
-	"scripts/verify-dsh-contract.mjs",
+	"scripts/install/provision-tools.mjs",
+	"scripts/verify/verify-dsh-contract.mjs",
 	"skill/SKILL.md",
 	"skill/references/python.md",
 	"skill/references/typescript-javascript.md",

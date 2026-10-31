@@ -88,7 +88,7 @@ Detailed verification requires all three project tools and must name the Compose
 file explicitly:
 
 ```text
-node scripts/verify.mjs compose.yaml
+node scripts/verify/verify.mjs compose.yaml
 ```
 
 That command runs `prettier --check`, `yamllint`, and

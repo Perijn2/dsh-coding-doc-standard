@@ -1,0 +1,11 @@
+{
+  "features": [
+    {
+      "slug": "language-pack-architecture",
+      "name": "language-pack-architecture",
+      "branch_id": "language-pack-architecture",
+      "status": "open",
+      "record": "language-pack-architecture/feature.json"
+    }
+  ]
+}

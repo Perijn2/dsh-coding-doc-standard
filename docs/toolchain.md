@@ -59,7 +59,7 @@ list. See `docs/platform-support.md` for runtime requirements and limitations.
 Run project-level documentation checks with:
 
 ```text
-node scripts/verify.mjs --doxygen path/to/Doxyfile
+node scripts/verify/verify.mjs --doxygen path/to/Doxyfile
 ```
 
 The supplied Doxyfile must explicitly set `WARN_IF_UNDOCUMENTED`,

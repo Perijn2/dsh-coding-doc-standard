@@ -104,7 +104,7 @@ for project-level documentation verification after provisioning tools:
 
 ```text
 npm run provision-tools
-node scripts/verify.mjs --doxygen path/to/Doxyfile
+node scripts/verify/verify.mjs --doxygen path/to/Doxyfile
 ```
 
 The Doxyfile must explicitly set `WARN_IF_UNDOCUMENTED`, `WARN_IF_DOC_ERROR`,

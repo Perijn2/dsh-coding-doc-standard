@@ -37,7 +37,7 @@ elsewhere), copies the executable into
 `~/.dsh/plugins/coding-doc-standard/tools/doxygen-1.18.0/`, marks it executable
 on Unix hosts, and confirms `doxygen --version` reports the pinned version.
 
-`scripts/verify.mjs` and the tests resolve the same path through
+`scripts/verify/verify.mjs` and the tests resolve the same path through
 `src/policy/platform.mjs`, so provisioning and verification cannot disagree about
 which binary is installed.
 

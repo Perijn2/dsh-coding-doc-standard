@@ -1,0 +1,34 @@
+{
+	"id": "modern",
+	"languageVersions": ">=5.1",
+	"extensions": [".lua"],
+	"preamble": {
+		"shebang": true
+	},
+	"codec": {
+		"headerSyntax": "line",
+		"headerToken": "---",
+		"fields": {
+			"author": "Author:",
+			"summary": "Summary:",
+			"description": "Description:",
+			"usage": "Usage:",
+			"changelog": "Changelog:",
+			"notes": "Notes:"
+		}
+	},
+	"units": {
+		"provider": "tree-sitter",
+		"grammar": "lua",
+		"query": "queries/units.scm",
+		"docBinding": {
+			"syntax": "line",
+			"token": "---"
+		},
+		"sections": {
+			"parameters": "@param",
+			"returns": "@return",
+			"errors": "@error"
+		}
+	}
+}

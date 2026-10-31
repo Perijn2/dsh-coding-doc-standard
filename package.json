@@ -12,6 +12,7 @@
 	},
 	"files": [
 		"bundle.patch.yml",
+		"languages",
 		"skill",
 		"src",
 		"scripts",
@@ -35,10 +36,10 @@
 	},
 	"scripts": {
 		"test": "node --test tests/**/*.test.mjs",
-		"verify": "node scripts/verify.mjs",
-		"install:harness": "node scripts/install.mjs",
-		"provision-tools": "node scripts/provision-tools.mjs",
-		"verify:dsh": "node scripts/verify-dsh-contract.mjs"
+		"verify": "node scripts/verify/verify.mjs",
+		"install:harness": "node scripts/install/install.mjs",
+		"provision-tools": "node scripts/install/provision-tools.mjs",
+		"verify:dsh": "node scripts/verify/verify-dsh-contract.mjs"
 	},
 	"dependencies": {
 		"@biomejs/biome": "2.5.12",
@@ -53,6 +54,7 @@
 		"@deepseek-ai/dsh-client-ui-settings": "^0.1.0-rc.8",
 		"@deepseek-ai/dsh-client-ui-settings-plugins": "^0.1.0-rc.8",
 		"@deepseek-ai/dsh-commands": "^0.1.0-rc.8",
+		"@deepseek-ai/dsh-llm": "^0.1.0-rc.8",
 		"@deepseek-ai/dsh-settings": "^0.1.0-rc.8",
 		"@deepseek-ai/dsh-tools": "^0.1.0-rc.8",
 		"@deepseek-ai/schemastery": "^3.18.1"

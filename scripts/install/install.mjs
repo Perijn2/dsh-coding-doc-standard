@@ -13,7 +13,7 @@
  *   Workflow: Validate bundle metadata, provision pinned tools, copy the skill,
  *   then report whether the bundle is actually listed by a profile.
  *   API guide: Run with --dry-run to preview every filesystem mutation.
- *   Worked example: node scripts/install.mjs --dry-run
+ *   Worked example: node scripts/install/install.mjs --dry-run
  */
 
 import { cpSync, existsSync, mkdirSync, readFileSync, rmSync } from "node:fs";
@@ -22,7 +22,7 @@ import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { provisionTools } from "./provision-tools.mjs";
 
-const packageRoot = dirname(dirname(fileURLToPath(import.meta.url)));
+const packageRoot = dirname(dirname(dirname(fileURLToPath(import.meta.url))));
 const dryRun = process.argv.includes("--dry-run");
 const packageJson = JSON.parse(
 	readFileSync(join(packageRoot, "package.json"), "utf8"),

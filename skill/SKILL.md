@@ -135,23 +135,33 @@ Formatter policy is intentionally split by tool capability:
   project-provided `clang-format` and `clang-tidy`; Doxygen is pinned separately
   for project-level documentation checks.
 
-Before calling `write` or `edit` for Python, TypeScript, JavaScript, or Docker
-Compose, call the DSH-managed `format_code` tool with the complete pending UTF-8
-content. Do not search `PATH`, package directories, or global installations:
+Write source through the DSH-managed `write_formatted` tool instead of
+formatting and then calling `write` or `edit`. It formats the candidate, checks
+the formatted text, and writes it when clean; a call that was refused wrote
+nothing, and its message lists every finding at once. Do not search `PATH`,
+package directories, or global installations:
 
 ```json
 {
-  "language": "typescript",
   "file_path": "src/module.ts",
+  "language": "typescript",
   "content": "export const value=1\n"
 }
 ```
 
-Use the returned `formatted_content` as the complete write candidate. For edits,
-construct and format the complete post-edit file rather than formatting only
-`new_string`. `file_path` selects the formatter parser and project configuration;
-the destination does not need to exist. Optional `formatter_args` is a string
-array of native formatter flags.
+`file_path` is load-bearing: it selects the formatter parser, the language
+profile, and the project configuration, and the destination does not need to
+exist. `language` is required and must agree with `file_path`: `python` for
+`.py`, `typescript` for `.ts`/`.tsx`/`.mts`/`.cts`, `javascript` for
+`.js`/`.jsx`/`.mjs`/`.cjs`, `docker-compose` for a Compose file. A
+contradiction is refused rather than formatted with the wrong parser, so state
+what the file actually is. Use `format_code` when you want the formatted text
+without writing anything: it runs the same check and never writes. Paths with
+no managed formatter, such as `.md` or `.rs`, belong on `write`. Optional
+`formatter_args` is a string array of native formatter flags. For edits, pass
+the complete post-edit file rather than formatting only `new_string`. A
+formatter that fails still reports the documentation check against the raw
+candidate, so one response carries both problems.
 
 Humans can use `/code-formatter` for existing files or pending content. Pending
 slash-command content accepts simple quoted `--content-utf8` text or robust

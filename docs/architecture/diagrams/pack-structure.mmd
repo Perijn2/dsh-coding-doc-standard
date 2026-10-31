@@ -1,0 +1,35 @@
+%% pack-structure: component diagram linked to ADR-0001.
+%% Rationale: This source stays with its owning ADR for review and conformance.
+flowchart TD
+  subgraph Packs["Language packs (data directories)"]
+    LUA["lua pack<br/>pack.json + profiles + queries + skill"]
+    PY["python pack"]
+    OTHER["… more packs"]
+  end
+
+  subgraph Engine["coding-doc-standard engine"]
+    HOST["plugin-host<br/>Cordis plugin surfaces"]
+    REG["pack-registry<br/>discover + validate manifests"]
+    SEL["profile-selector<br/>detect or pin version profile"]
+    CODEC["codec<br/>decode native syntax"]
+    ENG["contract-engine<br/>universal contract findings"]
+    PROV["dependency-providers<br/>tree-sitter | regex | npm | external-command"]
+    GATE["gate-runner<br/>candidate + budget + aggregate"]
+    SET["settings-surface<br/>rendered from registry"]
+    SKILL["skill-composer<br/>core contract + pack references"]
+  end
+
+  HOST --> GATE
+  HOST --> SET
+  HOST --> SKILL
+  GATE --> SEL
+  GATE --> ENG
+  GATE --> PROV
+  ENG --> CODEC
+  SEL --> REG
+  CODEC --> REG
+  PROV --> REG
+  SET --> REG
+  SKILL --> REG
+  REG -- "reads manifests" --> Packs
+  PROV -- "loads pinned dependencies" --> Packs

@@ -1,0 +1,72 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://dsh.dev/rs/schema/settings-entry.json",
+  "title": "Settings entry",
+  "description": "One rendered settings-menu group for an installed pack or a stale policy reference.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "entry"
+  ],
+  "properties": {
+    "entry": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "pack": {
+          "type": "string"
+        },
+        "label": {
+          "type": "string"
+        },
+        "profiles": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "version_ranges": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "installed": {
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "installed",
+        "label",
+        "pack",
+        "profiles"
+      ]
+    }
+  },
+  "x-governed": {
+    "requirements": [
+      "REQ-022",
+      "REQ-023",
+      "REQ-024"
+    ],
+    "adrs": [
+      "ADR-0006"
+    ]
+  },
+  "x-authored": {
+    "statements": [
+      "object entry",
+      "string entry.pack",
+      "string entry.label",
+      "array entry.profiles of string",
+      "array entry.version_ranges of string",
+      "boolean entry.installed",
+      "required entry",
+      "required entry.pack",
+      "required entry.label",
+      "required entry.profiles",
+      "required entry.installed",
+      "closed entry"
+    ]
+  }
+}

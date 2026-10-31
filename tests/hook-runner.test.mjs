@@ -1,4 +1,4 @@
-﻿/**
+/**
  * @module hook-runner-tests
  * @author Perijn Huijser
  * Verifies pending write and edit candidate construction for hook execution.
@@ -20,6 +20,7 @@ import { join } from "node:path";
 import test from "node:test";
 import { checkProjectPublicUnits } from "../src/hook/public-unit-adapter.mjs";
 import {
+	buildCandidate,
 	candidateFromPayload,
 	checkFormatting,
 	checkSourcePublicUnits,
@@ -126,6 +127,7 @@ test("selects only pinned fast formatter profiles", () => {
 test("checks direct exported TypeScript and JavaScript units only when enabled", () => {
 	const policy = {
 		...loadPolicy(),
+		enabled: true,
 		publicUnitDocs: { typescriptJavascript: true },
 	};
 	const missing = checkSourcePublicUnits(
@@ -164,6 +166,18 @@ export default class Example {}
 			{ ...loadPolicy(), publicUnitDocs: { typescriptJavascript: false } },
 		),
 		[],
+	);
+	assert.deepEqual(
+		checkSourcePublicUnits(
+			{ path: "example.ts", content: "export function missing() {}\n" },
+			{
+				...loadPolicy(),
+				enabled: false,
+				publicUnitDocs: { typescriptJavascript: true },
+			},
+		),
+		[],
+		"a disabled policy must never report findings",
 	);
 });
 
@@ -213,7 +227,7 @@ test("uses rustdoc as a native Rust public-unit adapter", async () => {
 		publicUnitAdapters: {
 			rust: {
 				command: process.execPath,
-				args: ["scripts/rust-public-unit-adapter.mjs"],
+				args: ["scripts/adapters/rust-public-unit-adapter.mjs"],
 				cwd: process.cwd(),
 			},
 		},
@@ -233,7 +247,7 @@ test("uses Doxygen as a native C/C++ public-unit adapter", async () => {
 		publicUnitAdapters: {
 			cCpp: {
 				command: process.execPath,
-				args: ["scripts/cpp-public-unit-adapter.mjs"],
+				args: ["scripts/adapters/cpp-public-unit-adapter.mjs"],
 				cwd: process.cwd(),
 			},
 		},
@@ -328,4 +342,66 @@ test("blocks TypeScript and Compose candidates that pinned formatters would chan
 	);
 	assert.match(typescript, /@biomejs\/biome 2\.5\.12/);
 	assert.match(compose, /prettier 3\.9\.6/);
+});
+
+test("builds a candidate from an edit whose line endings drift", async () => {
+	await withTemporaryDirectory(async (directory) => {
+		const path = join(directory, "crlf.py");
+		await writeFile(path, "before\r\nsame\r\nafter\r\n", "utf8");
+		const built = await buildCandidate({
+			tool_input: {
+				file_path: path,
+				old_string: "before\nsame",
+				new_string: "first\nsecond",
+			},
+		});
+		assert.equal(built.applicable, true);
+		assert.equal(built.candidate.content, "first\r\nsecond\r\nafter\r\n");
+	});
+});
+
+test("builds a candidate from a replace_all edit", async () => {
+	await withTemporaryDirectory(async (directory) => {
+		const path = join(directory, "multi.py");
+		await writeFile(path, "same\nsame\n", "utf8");
+		const built = await buildCandidate({
+			tool_input: {
+				file_path: path,
+				old_string: "same",
+				new_string: "next",
+				replace_all: true,
+			},
+		});
+		assert.equal(built.applicable, true);
+		assert.equal(built.candidate.content, "next\nnext\n");
+	});
+});
+
+test("still skips a multi-match edit without replace_all", async () => {
+	await withTemporaryDirectory(async (directory) => {
+		const path = join(directory, "multi.py");
+		await writeFile(path, "same\nsame\n", "utf8");
+		const built = await buildCandidate({
+			tool_input: { file_path: path, old_string: "same", new_string: "next" },
+		});
+		assert.equal(built.applicable, false);
+		assert.match(built.reason, /matched 2 copies/);
+	});
+});
+
+test("skips a replace_all edit whose old text matches nothing", async () => {
+	await withTemporaryDirectory(async (directory) => {
+		const path = join(directory, "multi.py");
+		await writeFile(path, "same\n", "utf8");
+		const built = await buildCandidate({
+			tool_input: {
+				file_path: path,
+				old_string: "absent",
+				new_string: "next",
+				replace_all: true,
+			},
+		});
+		assert.equal(built.applicable, false);
+		assert.match(built.reason, /nothing to change/);
+	});
 });

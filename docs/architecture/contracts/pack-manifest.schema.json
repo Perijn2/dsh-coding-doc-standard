@@ -1,0 +1,92 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://dsh.dev/rs/schema/pack-manifest.json",
+  "title": "Pack manifest",
+  "description": "Identity and dependency declarations of one installed language pack.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "pack"
+  ],
+  "properties": {
+    "pack": {
+      "type": "object",
+      "additionalProperties": true,
+      "properties": {
+        "id": {
+          "type": "string",
+          "pattern": "^[a-z][a-z0-9-]*$"
+        },
+        "label": {
+          "type": "string"
+        },
+        "pack_version": {
+          "type": "string",
+          "pattern": "^\\d+\\.\\d+\\.\\d+$"
+        },
+        "language": {
+          "type": "object",
+          "additionalProperties": true,
+          "properties": {
+            "name": {
+              "type": "string"
+            },
+            "default_profile": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "name"
+          ]
+        },
+        "profiles": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "dependencies": {
+          "type": "object",
+          "additionalProperties": true
+        }
+      },
+      "required": [
+        "id",
+        "label",
+        "language",
+        "pack_version",
+        "profiles"
+      ]
+    }
+  },
+  "x-governed": {
+    "requirements": [
+      "REQ-002",
+      "REQ-004",
+      "REQ-017"
+    ],
+    "adrs": [
+      "ADR-0001"
+    ]
+  },
+  "x-authored": {
+    "statements": [
+      "object pack",
+      "string pack.id pattern ^[a-z][a-z0-9-]*$",
+      "string pack.label",
+      "string pack.pack_version pattern ^\\d+\\.\\d+\\.\\d+$",
+      "object pack.language",
+      "string pack.language.name",
+      "string pack.language.default_profile",
+      "array pack.profiles of string",
+      "object pack.dependencies",
+      "required pack",
+      "required pack.id",
+      "required pack.label",
+      "required pack.pack_version",
+      "required pack.language",
+      "required pack.language.name",
+      "required pack.profiles"
+    ]
+  }
+}

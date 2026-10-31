@@ -1,0 +1,110 @@
+{
+  "schema": "https://dsh.dev/rs/schema/layout.json",
+  "generated_by": "manual seed",
+  "governed_by": [
+    "REQ-002"
+  ],
+  "blocks": [
+    {
+      "slug": "codec",
+      "c4_level": "component",
+      "responsibility": "Decodes language-native documentation syntax into the universal documentation contract.",
+      "modules": [
+        "src/engine/codec.mjs"
+      ],
+      "depends_on": [
+        "pack-registry"
+      ]
+    },
+    {
+      "slug": "contract-engine",
+      "c4_level": "component",
+      "responsibility": "Validates decoded documentation against the universal contract and assembles findings.",
+      "modules": [
+        "src/engine/contract.mjs"
+      ],
+      "depends_on": [
+        "codec"
+      ]
+    },
+    {
+      "slug": "dependency-providers",
+      "c4_level": "component",
+      "responsibility": "Resolves declared dependency providers such as tree-sitter, regex, npm, and external commands to discover units and run formatters.",
+      "modules": [
+        "src/engine/providers.mjs"
+      ],
+      "depends_on": [
+        "pack-registry"
+      ]
+    },
+    {
+      "slug": "gate-runner",
+      "c4_level": "component",
+      "responsibility": "Builds the pending write candidate, runs checks under one budget, and renders the aggregated denial.",
+      "modules": [
+        "src/engine/index.mjs",
+        "src/hook"
+      ],
+      "depends_on": [
+        "contract-engine",
+        "dependency-providers",
+        "pack-registry",
+        "profile-selector"
+      ]
+    },
+    {
+      "slug": "pack-registry",
+      "c4_level": "component",
+      "responsibility": "Discovers language packs, validates their manifests, and exposes the installed pack registry.",
+      "modules": [
+        "src/engine/registry.mjs"
+      ],
+      "depends_on": []
+    },
+    {
+      "slug": "plugin-host",
+      "c4_level": "container",
+      "responsibility": "Host plugin that mounts settings, commands, tools, and the pre-write enforcement gate in DSH.",
+      "modules": [
+        "src/host"
+      ],
+      "depends_on": [
+        "gate-runner",
+        "settings-surface",
+        "skill-composer"
+      ]
+    },
+    {
+      "slug": "profile-selector",
+      "c4_level": "component",
+      "responsibility": "Selects the matching version profile for a language from detection hints and user pins.",
+      "modules": [
+        "src/engine/profiles.mjs"
+      ],
+      "depends_on": [
+        "pack-registry"
+      ]
+    },
+    {
+      "slug": "settings-surface",
+      "c4_level": "component",
+      "responsibility": "Renders the settings menu from the pack registry and persists effective policy.",
+      "modules": [
+        "src/policy"
+      ],
+      "depends_on": [
+        "pack-registry"
+      ]
+    },
+    {
+      "slug": "skill-composer",
+      "c4_level": "component",
+      "responsibility": "Composes the machine-wide skill from the core contract and each installed pack reference.",
+      "modules": [],
+      "depends_on": [
+        "pack-registry"
+      ]
+    }
+  ]
+}

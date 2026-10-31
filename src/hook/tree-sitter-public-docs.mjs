@@ -1,4 +1,4 @@
-﻿/**
+/**
  * @module tree-sitter-public-docs
  * @author Perijn Huijser
  * Enforces native documentation on structurally recognized declarations.
@@ -127,7 +127,7 @@ const PROFILES = {
 		signature: "signature",
 		data_type: "data type",
 		newtype: "newtype",
-		type_synomym: "type synonym",
+		type_synonym: "type synonym",
 		class: "class",
 	}),
 	lua: profile("lua", [".lua"], "lua", {

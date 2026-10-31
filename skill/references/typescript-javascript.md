@@ -105,7 +105,7 @@ npx biome format --write path/to/module.ts
 npx biome check path/to/module.ts
 ```
 
-For detailed verification, run `node scripts/verify.mjs path/to/module.ts` from
+For detailed verification, run `node scripts/verify/verify.mjs path/to/module.ts` from
 this package checkout when `biome` is available on the command path. Formatter
 success checks syntax and layout only; it does not establish undocumented API
 facts.

@@ -60,12 +60,12 @@ alone cannot establish the public API.
 |---|---|---|
 | Active skill contract | `skill/SKILL.md` | Add the language only after implementation; link its active reference and describe verified enforcement limits. |
 | Active reference | `skill/references/<language>.md` | Promote the matching planning reference into an evidence-based usage guide with no speculative commands. |
-| Package asset validation | `scripts/verify-install.mjs` | Add every promoted reference to `required`; also expand the current list to cover all active references consistently. |
+| Package asset validation | `scripts/install/verify-install.mjs` | Add every promoted reference to `required`; also expand the current list to cover all active references consistently. |
 | Header classification | `src/hook/checker.py` | Add extensions to `SOURCE_EXTENSIONS`, native leading-header extraction, a family mapping, language labels, and only parser-backed public-unit checks. |
 | Policy defaults | `src/policy/defaults.json` | Add `languages.<profile>`, any `format<Profile>` toggle, formatter metadata, and linter metadata. Preserve backward-compatible merging in `_load_policy`. |
 | Pending formatter | `src/hook/run.mjs` | Extend `formatterProfile`, select a tool safely, provide stdin/check arguments, define missing-tool behavior, and test byte-for-byte output comparison. |
-| Tool manifest/provisioning | `src/policy/tools.json`, `scripts/provision-tools.mjs`, `src/policy/platform.mjs` | Pin package or native versions only after host/platform support is verified; add checksum, executable-path, and version checks for every native asset. |
-| Detailed verifier | `scripts/verify.mjs` | Add extensions, project-root-aware commands, optional-tool behavior, and doc-generator configuration validation where relevant. Avoid running project-wide commands once per file. |
+| Tool manifest/provisioning | `src/policy/tools.json`, `scripts/install/provision-tools.mjs`, `src/policy/platform.mjs` | Pin package or native versions only after host/platform support is verified; add checksum, executable-path, and version checks for every native asset. |
+| Detailed verifier | `scripts/verify/verify.mjs` | Add extensions, project-root-aware commands, optional-tool behavior, and doc-generator configuration validation where relevant. Avoid running project-wide commands once per file. |
 | Host settings schema | `src/host/index.mjs` | Add schema fields, policy persistence, and merge-safe defaults for language and formatter controls. |
 | Settings UI | `src/client/index.js` | Add documentation and formatter controls with the exact verified version and whether the tool is project-provided or managed. |
 | Tests | `tests/checker.test.mjs`, `tests/hook-runner.test.mjs`, `tests/toolchain.test.mjs`, `tests/dsh-integration.test.mjs` | Cover routing, headers, public API checks, formatter pass/fail/missing states, policy toggles, settings persistence, and native DSH guard behavior. |
@@ -99,7 +99,7 @@ Select one of two modes:
 - **Pinned pre-write:** the formatter accepts pending text via stdin, has a
   portable distribution, exact version verification, and deterministic output.
 - **Project-aware detailed-only:** the tool needs a workspace, compiler, SDK, or
-  project config; expose it through `coding-doc-verify` / `scripts/verify.mjs`
+  project config; expose it through `coding-doc-verify` / `scripts/verify/verify.mjs`
   and default the pre-write toggle off.
 
 Tests must prove unavailable tools obey `blockOnMissingFormatter` and that

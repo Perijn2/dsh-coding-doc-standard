@@ -42,13 +42,13 @@ const doxygen = resolveDoxygenBinary(toolsRoot, tools.doxygen);
 /**
  * Runs the repository verify command with the given arguments.
  *
- * @param {string[]} args - Arguments passed to scripts/verify.mjs.
+ * @param {string[]} args - Arguments passed to scripts/verify/verify.mjs.
  * @returns {import('node:child_process').SpawnSyncReturns<string>} Spawn result.
  */
 function runVerify(args) {
 	return spawnSync(
 		process.execPath,
-		[join(root, "scripts", "verify.mjs"), ...args],
+		[join(root, "scripts", "verify", "verify.mjs"), ...args],
 		{
 			cwd: root,
 			encoding: "utf8",

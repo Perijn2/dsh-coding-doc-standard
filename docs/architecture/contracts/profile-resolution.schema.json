@@ -1,0 +1,74 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://dsh.dev/rs/schema/profile-resolution.json",
+  "title": "Profile resolution",
+  "description": "How the engine resolved the profile for one language in one workspace.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "resolution"
+  ],
+  "properties": {
+    "resolution": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "language": {
+          "type": "string"
+        },
+        "detected_version": {
+          "type": "string"
+        },
+        "pinned_profile": {
+          "type": "string"
+        },
+        "resolved_profile": {
+          "type": "string"
+        },
+        "source": {
+          "type": "string",
+          "enum": [
+            "default",
+            "detect",
+            "pin"
+          ]
+        },
+        "hint": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "language",
+        "resolved_profile",
+        "source"
+      ]
+    }
+  },
+  "x-governed": {
+    "requirements": [
+      "REQ-018",
+      "REQ-019",
+      "REQ-020",
+      "REQ-021"
+    ],
+    "adrs": [
+      "ADR-0005"
+    ]
+  },
+  "x-authored": {
+    "statements": [
+      "object resolution",
+      "string resolution.language",
+      "string resolution.detected_version",
+      "string resolution.pinned_profile",
+      "string resolution.resolved_profile",
+      "enum resolution.source detect|default|pin",
+      "string resolution.hint",
+      "required resolution",
+      "required resolution.language",
+      "required resolution.resolved_profile",
+      "required resolution.source",
+      "closed resolution"
+    ]
+  }
+}

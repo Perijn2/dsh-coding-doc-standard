@@ -21,6 +21,7 @@ import argparse
 import ast
 import fnmatch
 import json
+import os
 import re
 import sys
 from dataclasses import dataclass
@@ -47,6 +48,7 @@ SOURCE_EXTENSIONS = {
     ".cs",
     ".java",
     ".kt",
+    ".kts",
     ".sh",
     ".bash",
     ".php",
@@ -110,8 +112,49 @@ def _policy_path() -> Path:
     return Path(__file__).resolve().parents[1] / "policy" / "defaults.json"
 
 
+def _inline_policy() -> dict | None:
+    """Summary: Reads the live policy the host passes through the environment.
+
+    Returns:
+        Parsed policy dictionary, or None when the host sent nothing usable.
+    """
+
+    raw = os.environ.get("CODING_DOC_STANDARD_POLICY_JSON", "").strip()
+    if not raw:
+        return None
+    try:
+        parsed = json.loads(raw)
+    except json.JSONDecodeError:
+        return None
+    return parsed if isinstance(parsed, dict) else None
+
+
+def _file_policy(path: str | None) -> dict | None:
+    """Summary: Reads a user policy document from disk.
+
+    Parameters:
+        path: Optional JSON policy file supplied by the host plugin.
+
+    Returns:
+        Parsed policy dictionary, or None when absent or unreadable.
+    """
+
+    if not path:
+        return None
+    try:
+        parsed = json.loads(Path(path).read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError):
+        return None
+    return parsed if isinstance(parsed, dict) else None
+
+
 def _load_policy(path: str | None) -> dict:
-    """Summary: Loads canonical defaults merged with an optional user policy.
+    """Summary: Loads canonical defaults merged with the effective user policy.
+
+    The host hands over the policy it is enforcing right now through the
+    environment, so a durable write that failed or was interrupted cannot leave
+    the checker judging a candidate against a stale rule set. The file path
+    stays the fallback for standalone runs.
 
     Parameters:
         path: Optional JSON policy file supplied by the host plugin.
@@ -121,13 +164,10 @@ def _load_policy(path: str | None) -> dict:
     """
 
     defaults = json.loads(_policy_path().read_text(encoding="utf-8"))
-    if not path:
-        return defaults
-    try:
-        override = json.loads(Path(path).read_text(encoding="utf-8"))
-    except (OSError, json.JSONDecodeError):
-        return defaults
-    if not isinstance(override, dict):
+    override = _inline_policy()
+    if override is None:
+        override = _file_policy(path)
+    if override is None:
         return defaults
     defaults.update(
         {key: value for key, value in override.items() if key != "languages"}
@@ -177,24 +217,31 @@ def _leading_comment_text(text: str) -> str:
     return "\n".join(lines)
 
 
-def _require_labels(path: str, text: str, labels: Iterable[str]) -> list[Violation]:
+def _require_labels(path: str, text: str, labels: Iterable[str | tuple[str, ...]]) -> list[Violation]:
     """Summary: Reports absent documentation labels in a normalized comment block.
+
+    Each label is either one string or a tuple of accepted spellings; any one
+    spelling satisfies the label, so `("@author", "Author:")` accepts both the
+    tag and the prose form across language families.
 
     Parameters:
         path: Candidate path.
         text: Documentation block to inspect.
-        labels: Case-insensitive labels required by policy.
+        labels: Case-insensitive labels or spelling groups required by policy.
 
     Returns:
         Violations for each missing label.
     """
 
     lowered = text.lower()
-    return [
-        Violation(path, 1, f"Missing '{label}' in file header")
-        for label in labels
-        if label.lower() not in lowered
-    ]
+    violations: list[Violation] = []
+    for label in labels:
+        spellings = label if isinstance(label, tuple) else (label,)
+        if not any(spelling.lower() in lowered for spelling in spellings):
+            violations.append(
+                Violation(path, 1, f"Missing '{spellings[0]}' in file header")
+            )
+    return violations
 
 
 def _check_compose(path: str, text: str) -> list[Violation]:
@@ -326,14 +373,17 @@ def _source_header(path: str, text: str) -> str:
         )
     elif suffix in {".ts", ".tsx", ".mts", ".cts", ".js", ".jsx", ".mjs", ".cjs"}:
         match = re.match(r"(?:\ufeff)?(?:#![^\n]*\n)?\s*/\*\*(.*?)\*/", text, re.S)
-    elif suffix in {".c", ".h", ".cc", ".cpp", ".hpp", ".java", ".kt", ".scala"}:
+    elif suffix in {".c", ".h", ".cc", ".cpp", ".hpp", ".java", ".kt", ".kts", ".scala"}:
         match = re.match(r"(?:\ufeff)?\s*/\*\*(.*?)\*/", text, re.S)
     elif suffix == ".php":
         match = re.match(
             r"(?:\ufeff)?[ \t]*<\?php[ \t]*(?:\r?\n)?\s*/\*\*(.*?)\*/", text, re.S
         )
     elif suffix in {".cs", ".swift", ".dart"}:
-        match = re.match(r"(?:\ufeff)?\s*((?:///.*\n?)+)", text)
+        match = re.match(
+            r"(?:\ufeff)?\s*((?:///[^\n]*\n?)+|/\*\*[\s\S]*?\*/)",
+            text,
+        )
     elif suffix in {".sh", ".bash"}:
         match = re.match(r"(?:\ufeff)?(?:#![^\n]*\n)?\s*((?:#[^!].*\n?)+)", text)
     elif suffix == ".rb":
@@ -614,7 +664,9 @@ def _check_cpp_documentation(path: str, text: str) -> list[Violation]:
         violations.append(
             Violation(path, 1, f"Missing exact '@file {basename}' in file header")
         )
-    if not _label_has_value(header, "@author"):
+    if not (
+        _label_has_value(header, "@author") or _label_has_value(header, "Author:")
+    ):
         violations.append(Violation(path, 1, "Missing '@author' value in file header"))
     if not _label_has_value(header, "@brief"):
         violations.append(
@@ -667,6 +719,7 @@ def check_content(path: str, text: str, policy: dict | None = None) -> list[Viol
         ".cs": "csharp",
         ".java": "java",
         ".kt": "kotlin",
+        ".kts": "kotlin",
         ".sh": "shell",
         ".bash": "shell",
         ".php": "php",
@@ -693,7 +746,9 @@ def check_content(path: str, text: str, policy: dict | None = None) -> list[Viol
         "php",
         "scala",
     }:
-        violations = _require_labels(path, header, ("@author", "Usage:"))
+        violations = _require_labels(
+            path, header, (("@author", "Author:"), "Usage:")
+        )
     else:
         violations = _require_labels(path, header, ("Author", "Usage"))
     if suffix == ".py":
@@ -715,13 +770,21 @@ def main() -> int:
     parser.add_argument("--policy")
     parser.add_argument("--stdin", action="store_true")
     args = parser.parse_args()
+    # Emit findings as UTF-8 regardless of the Windows console codepage, so a
+    # candidate containing non-ASCII text cannot crash the checker mid-report.
+    for stream in (sys.stdout, sys.stderr):
+        if hasattr(stream, "reconfigure"):
+            stream.reconfigure(encoding="utf-8", errors="replace")
     try:
-        text = (
-            sys.stdin.read()
-            if args.stdin
-            else Path(args.path).read_text(encoding="utf-8")
-        )
-    except OSError as error:
+        if args.stdin:
+            # Decode the piped candidate explicitly and drop a leading byte-order
+            # mark: sys.stdin would use the locale codec, turning EF BB BF into
+            # "ï»¿", which defeats every header regex below and reports a
+            # perfectly documented file as missing its header.
+            text = sys.stdin.buffer.read().decode("utf-8-sig")
+        else:
+            text = Path(args.path).read_text(encoding="utf-8")
+    except (OSError, UnicodeDecodeError) as error:
         print(f"[doc-standard] Cannot read candidate: {error}", file=sys.stderr)
         return 1
     violations = check_content(args.path, text, _load_policy(args.policy))

@@ -1,0 +1,41 @@
+{
+  "schema": "https://dsh.dev/rs/schema/requirement-record.json",
+  "slug": "settings-surface",
+  "generated_by": "dsh-repo-standard P2",
+  "requirement_count": 3,
+  "requirements": [
+    {
+      "id": "REQ-022",
+      "slug": "settings-surface",
+      "priority": "MUST",
+      "ears_pattern": "ubiquitous",
+      "text": "The System shall render the settings menu from the installed pack registry with one group per pack and one toggle per profile.",
+      "implements_adrs": [
+        "ADR-0006"
+      ],
+      "status": "draft"
+    },
+    {
+      "id": "REQ-023",
+      "slug": "settings-surface",
+      "priority": "MUST",
+      "ears_pattern": "ubiquitous",
+      "text": "The System shall display each profile language version range in the settings menu.",
+      "implements_adrs": [
+        "ADR-0006"
+      ],
+      "status": "draft"
+    },
+    {
+      "id": "REQ-024",
+      "slug": "settings-surface",
+      "priority": "MUST",
+      "ears_pattern": "event_driven",
+      "text": "When a policy references a profile id whose pack is not installed, the System shall render the entry as not installed.",
+      "implements_adrs": [
+        "ADR-0006"
+      ],
+      "status": "draft"
+    }
+  ]
+}

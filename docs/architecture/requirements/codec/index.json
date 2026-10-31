@@ -1,0 +1,52 @@
+{
+  "schema": "https://dsh.dev/rs/schema/requirement-record.json",
+  "slug": "codec",
+  "generated_by": "dsh-repo-standard P2",
+  "requirement_count": 4,
+  "requirements": [
+    {
+      "id": "REQ-010",
+      "slug": "codec",
+      "priority": "MUST",
+      "ears_pattern": "ubiquitous",
+      "text": "The System shall decode each language native documentation syntax into the universal contract through the language pack codec declaration.",
+      "implements_adrs": [
+        "ADR-0001"
+      ],
+      "status": "draft"
+    },
+    {
+      "id": "REQ-011",
+      "slug": "codec",
+      "priority": "MUST",
+      "ears_pattern": "ubiquitous",
+      "text": "The System shall skip the preamble a profile declares, including shebang lines, before decoding the documentation header.",
+      "implements_adrs": [
+        "ADR-0003"
+      ],
+      "status": "draft"
+    },
+    {
+      "id": "REQ-012",
+      "slug": "codec",
+      "priority": "MUST",
+      "ears_pattern": "unwanted_behaviour",
+      "text": "If the documentation header is not the first content after the declared preamble, then the System shall report the file as missing its documentation header.",
+      "implements_adrs": [
+        "ADR-0003"
+      ],
+      "status": "draft"
+    },
+    {
+      "id": "REQ-013",
+      "slug": "codec",
+      "priority": "MUST",
+      "ears_pattern": "event_driven",
+      "text": "When a codec declaration names a field spelling, the System shall decode text matching that spelling into the universal field name.",
+      "implements_adrs": [
+        "ADR-0003"
+      ],
+      "status": "draft"
+    }
+  ]
+}

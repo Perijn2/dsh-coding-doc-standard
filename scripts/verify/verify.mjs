@@ -15,7 +15,7 @@
  *   Doxygen warning policy, then run the pinned Doxygen binary.
  *   API guide: Run without paths for package verification; use --optional only
  *   for non-pinned project tools that are intentionally unavailable.
- *   Worked example: node scripts/verify.mjs --doxygen Doxyfile src/api.cpp
+ *   Worked example: node scripts/verify/verify.mjs --doxygen Doxyfile src/api.cpp
  */
 
 import { spawnSync } from "node:child_process";
@@ -27,9 +27,9 @@ import {
 	platformKey,
 	resolveDoxygenBinary,
 	supportedDoxygenPlatforms,
-} from "../src/policy/platform.mjs";
+} from "../../src/policy/platform.mjs";
 
-const root = dirname(dirname(fileURLToPath(import.meta.url)));
+const root = dirname(dirname(dirname(fileURLToPath(import.meta.url))));
 const tools = JSON.parse(
 	readFileSync(join(root, "src", "policy", "tools.json"), "utf8"),
 );
@@ -134,7 +134,7 @@ function verifyDoxygen(path) {
 
 if (doxygenIndex !== -1) verifyDoxygen(doxygenFile);
 if (!paths.length && doxygenIndex === -1) {
-	await import("./verify-install.mjs");
+	await import("../install/verify-install.mjs");
 } else {
 	for (const path of paths) {
 		if (!existsSync(path))
