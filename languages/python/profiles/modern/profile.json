@@ -1,0 +1,27 @@
+{
+	"id": "modern",
+	"languageVersions": ">=3.8",
+	"extensions": [".py", ".pyi"],
+	"formatterOnly": true,
+	"formatter": {
+		"adapter": "stdin-binary",
+		"checkMode": "exit-code",
+		"label": "Ruff 0.16.6",
+		"settingsKey": "formatPython",
+		"dependency": {
+			"provider": "npm",
+			"source": "legacy-engine-tools",
+			"name": "ruff",
+			"package": "ruff",
+			"version": "0.16.6",
+			"bin": "ruff"
+		},
+		"args": ["format", "--check", "--stdin-filename", "{path}", "-"],
+		"cleanExit": [0],
+		"diagnostics": "stderr"
+	},
+	"units": {
+		"provider": "regex",
+		"pattern": "(?!)x"
+	}
+}

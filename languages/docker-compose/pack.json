@@ -1,0 +1,11 @@
+{
+	"id": "docker-compose",
+	"label": "Docker Compose",
+	"packVersion": "1.0.0",
+	"language": {
+		"name": "Docker Compose",
+		"defaultProfile": "modern"
+	},
+	"profiles": ["modern"],
+	"dependencies": {}
+}

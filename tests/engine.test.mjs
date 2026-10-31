@@ -14,13 +14,24 @@
 
 import assert from "node:assert/strict";
 import test from "node:test";
+import schemastery from "@deepseek-ai/schemastery";
 import {
 	decodeDocument,
 	decodeUnitDoc,
 	skipPreamble,
 } from "../src/engine/codec.mjs";
 import { checkDocumentation } from "../src/engine/contract.mjs";
+import {
+	checkFormatting,
+	formatterDeclarationFor,
+} from "../src/engine/formatters.mjs";
 import { packCoverageFor, validateWithPacks } from "../src/engine/index.mjs";
+import {
+	packProfileEnabled,
+	packSettingsApply,
+	packSettingsFields,
+	packSettingsSource,
+} from "../src/engine/pack-settings.mjs";
 import { resolveProfile, versionSatisfies } from "../src/engine/profiles.mjs";
 import {
 	discoverUnits,
@@ -220,12 +231,78 @@ test("profile resolution prefers pins over detection over defaults", () => {
 });
 
 test("a pack without a formatter runs no formatting pass", async () => {
-	const profile = lua.profiles.get("modern");
 	assert.equal(
-		profile.formatter,
+		lua.profiles.get("modern").formatter,
 		undefined,
 		"the lua pack declares no formatter",
 	);
+	const result = await checkFormatting(
+		{ path: "example.lua", content: "return 1\n" },
+		{ formatOnWrite: true },
+	);
+	assert.equal(
+		result,
+		null,
+		"no formatter declaration means no formatting pass",
+	);
+});
+
+test("formatter-only packs own formatting without the documentation path", () => {
+	const python = registry.packs.get("python");
+	assert.ok(python, "the python formatter pack registers");
+	const profile = python.profiles.get("modern");
+	assert.equal(profile.formatterOnly, true);
+	assert.equal(
+		packCoverageFor("example.py"),
+		null,
+		"formatter-only packs must not own documentation",
+	);
+	assert.ok(registry.packs.get("docker-compose"));
+	assert.equal(
+		packCoverageFor("compose.yaml"),
+		null,
+		"filename-matched formatter packs must not own documentation",
+	);
+});
+
+test("the stdin-binary adapter declarations resolve for embedded packs", () => {
+	const ruff = formatterDeclarationFor("example.py");
+	assert.equal(ruff.formatter.adapter, "stdin-binary");
+	assert.equal(ruff.formatter.dependency.source, "legacy-engine-tools");
+	const biome = formatterDeclarationFor("example.ts");
+	assert.equal(biome.formatter.adapter, "stdin-binary");
+	assert.equal(biome.formatter.checkMode, "stdout-diff");
+	const prettier = formatterDeclarationFor("a/compose.yaml");
+	assert.ok(prettier, "compose filenames must resolve");
+	assert.equal(prettier.formatter.checkMode, "stdout-diff");
+});
+
+test("settings surface renders one group per installed pack", () => {
+	const fields = packSettingsFields(schemastery, {});
+	const packIds = Object.keys(fields.dict ?? {});
+	for (const expected of [
+		"lua",
+		"python",
+		"typescript-javascript",
+		"docker-compose",
+	])
+		assert.ok(packIds.includes(expected), `missing pack group ${expected}`);
+	const source = packSettingsSource({});
+	assert.equal(source.lua.modern, true);
+	const applied = packSettingsApply({ lua: { modern: false } }, {});
+	assert.equal(applied.lua.modern, false);
+	assert.equal(
+		packProfileEnabled({ packProfiles: applied }, "lua", "modern"),
+		false,
+		"a disabled profile must not enforce",
+	);
+});
+
+test("settings surface renders stale policy packs as not installed", () => {
+	const fields = packSettingsFields(schemastery, {
+		packProfiles: { "gone-pack": { modern: false } },
+	});
+	assert.ok(fields.dict["gone-pack"], "stale pack entries must render");
 });
 
 test("unit doc decoding extracts summary and sections", () => {

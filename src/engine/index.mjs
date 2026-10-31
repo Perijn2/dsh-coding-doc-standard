@@ -29,6 +29,10 @@ export function packCoverageFor(path, policy = {}) {
 	const coverage = packForPath(path);
 	if (!coverage) return null;
 	const { profile, resolution } = resolveProfile(coverage.pack, policy);
+	// A profile the user disabled in settings does not enforce, so the pack
+	// does not cover the path and legacy passes keep their previous behavior.
+	if (policy?.packProfiles?.[coverage.pack.manifest.id]?.[profile.id] === false)
+		return null;
 	return { pack: coverage.pack, profile, resolution };
 }
 

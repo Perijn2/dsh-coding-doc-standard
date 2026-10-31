@@ -28,7 +28,7 @@ const home = await mkdtemp(join(tmpdir(), "coding-doc-standard-home-"));
 process.env.USERPROFILE = home;
 process.env.HOME = home;
 
-const POLICY_KEYS = ["general", "languages", "formatting", "adapters"];
+const POLICY_KEYS = ["general", "languages", "formatting", "adapters", "packs"];
 
 const COMPLIANT_TS = [
 	"/**",

@@ -24,6 +24,11 @@ import { homedir } from "node:os";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { defineTool } from "@deepseek-ai/dsh-tools";
+import {
+	packSettingsApply,
+	packSettingsFields,
+	packSettingsSource,
+} from "../engine/pack-settings.mjs";
 import { runFormatterCommand } from "../formatter/command.mjs";
 import {
 	formatAndWrite,
@@ -725,6 +730,7 @@ async function installSettings(ctx, policy, onPolicy) {
 				})
 				.description("Pinned pre-write formatter routing."),
 			adapters: adapterSettingsSchema(schemaTools, current),
+			packs: packSettingsFields(schemaTools, current),
 		});
 		let source = () => ({
 			general: {
@@ -751,6 +757,7 @@ async function installSettings(ctx, policy, onPolicy) {
 					hookSettings(current, language),
 				]),
 			),
+			packs: packSettingsSource(current),
 		});
 		settings.installSettingsSection(
 			ctx,
@@ -805,6 +812,7 @@ async function installSettings(ctx, policy, onPolicy) {
 							typescriptJavascript: languages.typescriptJavascript === true,
 						},
 						languages: { ...current.languages, ...languages },
+						packProfiles: packSettingsApply(value.packs, current),
 					};
 					current = next;
 					await savePolicy(next);

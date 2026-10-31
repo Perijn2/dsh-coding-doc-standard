@@ -25,19 +25,20 @@ import { readFile } from "node:fs/promises";
 import { homedir } from "node:os";
 import { basename, dirname, extname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
+import {
+	formatterDeclarationFor,
+	runFormatterAdapter,
+} from "../engine/formatters.mjs";
 import { packCoverageFor, validateWithPacks } from "../engine/index.mjs";
-import { formatterWorkingDirectory } from "../formatter/command.mjs";
 import { checkProjectPublicUnits } from "./public-unit-adapter.mjs";
 import { checkTreeSitterPublicUnits } from "./tree-sitter-public-docs.mjs";
 import { checkTypescriptPublicUnits } from "./typescript-public-docs.mjs";
 
 const sourceRoot = dirname(dirname(fileURLToPath(import.meta.url)));
-const packageRoot = dirname(sourceRoot);
 const checker = join(sourceRoot, "hook", "checker.py");
 const defaultsPolicy = join(sourceRoot, "policy", "defaults.json");
 const durableRoot = join(homedir(), ".dsh", "plugins", "coding-doc-standard");
 const durablePolicy = join(durableRoot, "policy.json");
-const ruffVersion = "0.16.6";
 const treeSitterLanguages = [
 	"go",
 	"csharp",
@@ -411,47 +412,16 @@ export async function candidateFromPayload(payload) {
 }
 
 /**
- * Identifies the pre-write formatter profile for a candidate path.
+/**
+ * Spawns one process and captures its streams (rustfmt migration path only).
  *
- * @param {string} path - Candidate filesystem path.
- * @param {Record<string, unknown>} policy - Effective policy.
- * @returns {'python' | 'typescriptJavascript' | 'rust' | 'dockerCompose' | null} Formatter profile.
+ * @param {string} command - Executable path.
+ * @param {string[]} args - Argument list.
+ * @param {string} content - Standard-input payload.
+ * @param {string} cwd - Working directory.
+ * @param {boolean} [shell] - Whether to spawn through the shell.
+ * @returns {Promise<{code: number | null, stdout: string, stderr: string, error: Error | null}>} Run result.
  */
-export function formatterProfile(path, policy) {
-	if (!policy.formatOnWrite) return null;
-	const file = basename(path).toLowerCase();
-	const extension = extname(file);
-	if (extension === ".py" && policy.formatPython) return "python";
-	if (
-		[".ts", ".tsx", ".mts", ".cts", ".js", ".jsx", ".mjs", ".cjs"].includes(
-			extension,
-		) &&
-		policy.formatTypescriptJavascript
-	)
-		return "typescriptJavascript";
-	if (extension === ".rs" && policy.formatRust) return "rust";
-	const patterns = policy.composePatterns ?? [];
-	if (
-		policy.formatDockerCompose &&
-		patterns.some((pattern) => {
-			const expression = `^${pattern.replace(/[.+^${}()|[\]\\]/g, "\\$&").replaceAll("*", ".*")}$`;
-			return new RegExp(expression, "i").test(file);
-		})
-	)
-		return "dockerCompose";
-	return null;
-}
-
-function executable(name) {
-	const suffix = process.platform === "win32" ? ".cmd" : "";
-	return join(packageRoot, "node_modules", ".bin", `${name}${suffix}`);
-}
-
-function ruffExecutable() {
-	const name = process.platform === "win32" ? "ruff.exe" : "ruff";
-	return join(durableRoot, "tools", `ruff-${ruffVersion}`, "bin", name);
-}
-
 function execute(
 	command,
 	args,
@@ -484,14 +454,74 @@ function execute(
 }
 
 /**
- * Checks a candidate against its configured pinned formatter without modifying files.
+ * Runs the project rustfmt for one candidate (migration exception, REQ-028 audit).
  *
- * The pinned formatter runs inside the workspace it is checking. Biome treats
- * its working directory as a project root, so inheriting the host process
- * directory makes it exit with a nested-root or missing-ignore-file error on
- * files that are perfectly formatted. Running in the workspace and turning
- * off VCS discovery for one standard-input file keeps the result independent
- * of where the host process happened to start.
+ * @param {string} command - rustfmt executable.
+ * @param {string} content - Candidate content.
+ * @param {string} cwd - Working directory for the run.
+ * @returns {Promise<null | {unavailable?: boolean, message?: string}>} Null when formatted; otherwise the outcome.
+ */
+async function runRustfmt(command, content, cwd) {
+	const result = await execute(
+		command,
+		["--emit", "stdout"],
+		content,
+		cwd,
+		false,
+	);
+	if (result.error?.code === "ENOENT") return { unavailable: true };
+	if (result.code !== 0) {
+		const output = (result.stderr || result.stdout).trim();
+		return {
+			message: [
+				`[doc-standard] rustfmt could not format.`,
+				`Executable: ${command}`,
+				`Exit: ${result.code ?? "not started"}`,
+				output ? `Formatter output:\n${output}` : "Formatter output: none.",
+				result.error ? `Start error: ${result.error.message}` : null,
+			]
+				.filter(Boolean)
+				.join("\n"),
+		};
+	}
+	return result.stdout === content
+		? null
+		: { message: "[doc-standard] must match rustfmt formatting." };
+}
+
+/**
+ * Identifies the pre-write formatter profile for a candidate path.
+ *
+ * The routing derives from pack formatter declarations, not engine knowledge:
+ * each embedded pack's declaration carries the settings key that gates it, and
+ * the pack id maps onto this module's legacy profile keys for write-through
+ * routing. Rust remains the documented migration exception.
+ *
+ * @param {string} path - Candidate filesystem path.
+ * @param {Record<string, unknown>} policy - Effective policy.
+ * @returns {'python' | 'typescriptJavascript' | 'rust' | 'dockerCompose' | null} Formatter profile.
+ */
+export function formatterProfile(path, policy) {
+	if (extname(path).toLowerCase() === ".rs" && policy.formatRust) return "rust";
+	const declaration = formatterDeclarationFor(path);
+	if (!declaration) return null;
+	const settingsKey = declaration.formatter.settingsKey;
+	if (settingsKey && policy[settingsKey] === false) return null;
+	const keyByPackId = {
+		python: "python",
+		"typescript-javascript": "typescriptJavascript",
+		"docker-compose": "dockerCompose",
+	};
+	return keyByPackId[declaration.pack.manifest.id] ?? null;
+}
+
+/**
+ * Checks a candidate against its pack-declared formatter adapter without modifying files.
+ *
+ * The engine carries no formatter knowledge: the covering pack profile declares
+ * the adapter, the pinned dependency, and the argument template. Rust remains a
+ * documented migration exception (REQ-028 audit exception) until the Rust pack
+ * ships, because its formatter is the project toolchain rather than a managed one.
  *
  * @param {{path: string, content: string}} candidate - Proposed file state.
  * @param {Record<string, unknown>} [policy] - Effective policy override for testing.
@@ -503,105 +533,25 @@ export async function checkFormatting(
 	policy = loadPolicy(),
 	cwd = process.cwd(),
 ) {
-	const profile = formatterProfile(candidate.path, policy);
-	if (!profile) return null;
-	const workspace = typeof cwd === "string" && cwd !== "" ? cwd : process.cwd();
-	const target = resolve(workspace, candidate.path);
-	// The formatter runs beside the file it checks: Biome infers a project
-	// root from its working directory, so a host cwd from another project
-	// would read as a conflicting nested root configuration.
-	const formatterCwd = formatterWorkingDirectory(target, workspace);
-	const unavailable = (label) =>
-		policy.blockOnMissingFormatter !== false
-			? `[doc-standard] Required pinned formatter is unavailable: ${label}. Run npm run provision-tools.`
-			: null;
-	if (profile === "python") {
-		const command = ruffExecutable();
-		if (!existsSync(command)) return unavailable(`ruff ${ruffVersion}`);
-		const result = await execute(
-			command,
-			["format", "--check", "--stdin-filename", target, "-"],
-			candidate.content,
-			formatterCwd,
-		);
-		if (result.code === 0) return null;
-		const output = (result.stderr || result.stdout).trim();
-		return [
-			`[doc-standard] Ruff ${ruffVersion} could not validate ${candidate.path}.`,
-			`Executable: ${command}`,
-			`Workspace: ${workspace}`,
-			`Exit: ${result.code ?? "not started"}`,
-			output ? `Formatter output:\n${output}` : "Formatter output: none.",
-			result.error ? `Start error: ${result.error.message}` : null,
-			"Remediation: run npm run provision-tools, then call write_formatted with the intended file_path and complete content.",
-		]
-			.filter(Boolean)
-			.join("\n");
-	}
-	if (profile === "rust") {
+	if (!policy.formatOnWrite) return null;
+	// Migration exception: the Rust pack has not shipped, so the opt-in
+	// project-rustfmt check stays engine-side until it does.
+	if (extname(candidate.path).toLowerCase() === ".rs" && policy.formatRust) {
 		const command = process.platform === "win32" ? "rustfmt.exe" : "rustfmt";
-		const result = await execute(
+		const target = resolve(cwd, candidate.path);
+		const result = await runRustfmt(
 			command,
-			["--emit", "stdout"],
 			candidate.content,
 			dirname(target),
-			false,
 		);
-		if (result.error?.code === "ENOENT") return unavailable("rustfmt");
-		if (result.code !== 0) {
-			const output = (result.stderr || result.stdout).trim();
-			return [
-				`[doc-standard] rustfmt could not format ${candidate.path}.`,
-				`Executable: ${command}`,
-				`Exit: ${result.code ?? "not started"}`,
-				output ? `Formatter output:\n${output}` : "Formatter output: none.",
-				result.error ? `Start error: ${result.error.message}` : null,
-			]
-				.filter(Boolean)
-				.join("\n");
-		}
-		return result.stdout === candidate.content
-			? null
-			: `[doc-standard] ${candidate.path} must match rustfmt formatting.`;
+		if (result === null) return null;
+		if (result.unavailable)
+			return policy.blockOnMissingFormatter !== false
+				? "[doc-standard] Required formatter is unavailable: rustfmt."
+				: null;
+		return result.message;
 	}
-	const command = executable(
-		profile === "typescriptJavascript" ? "biome" : "prettier",
-	);
-	const label =
-		profile === "typescriptJavascript"
-			? "@biomejs/biome 2.5.12"
-			: "prettier 3.9.6";
-	if (!existsSync(command)) return unavailable(label);
-	const args =
-		profile === "typescriptJavascript"
-			? ["format", "--stdin-file-path", target, "--vcs-enabled=false"]
-			: ["--stdin-filepath", target];
-	const result = await execute(command, args, candidate.content, formatterCwd);
-	if (result.code !== 0) {
-		const output = (result.stderr || result.stdout).trim();
-		const renderedArgs = args
-			.map((argument) => JSON.stringify(argument))
-			.join(" ");
-		return [
-			`[doc-standard] ${label} could not format ${candidate.path}.`,
-			`Executable: ${command}`,
-			`Workspace: ${workspace}`,
-			`Arguments: ${renderedArgs}`,
-			`Exit: ${result.code ?? "not started"}`,
-			output ? `Formatter output:\n${output}` : "Formatter output: none.",
-			result.error ? `Start error: ${result.error.message}` : null,
-			"Remediation: run npm run provision-tools in coding-doc-standard, then call write_formatted with the intended file_path and complete content. If the formatter itself failed, see the skill (skill coding-doc-standard) before retrying.",
-		]
-			.filter(Boolean)
-			.join("\n");
-	}
-	return result.stdout === candidate.content
-		? null
-		: [
-				`[doc-standard] ${candidate.path} must match ${label} formatting.`,
-				`Managed executable: ${command}`,
-				"Call write_formatted with the intended file_path and the complete pending content: it formats, checks, and writes in one call.",
-			].join("\n");
+	return runFormatterAdapter(candidate, policy, cwd);
 }
 
 /**

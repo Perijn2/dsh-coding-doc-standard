@@ -29,6 +29,17 @@ const UNIT_PROVIDERS = new Set([
 	"npm",
 	"external-command",
 ]);
+const FORMATTER_ADAPTERS = new Set([
+	"stdin-binary",
+	"npm-function",
+	"external-command",
+]);
+const DEPENDENCY_SOURCES = new Set([
+	"pack-store",
+	"plugin-node-modules",
+	"legacy-engine-tools",
+	"project",
+]);
 const HEADER_SYNTAXES = new Set(["line", "block", "docstring", "haddock"]);
 
 /**
@@ -75,8 +86,36 @@ function validateProfile(profile, path) {
 		profile.languageVersions === ""
 	)
 		return `${path} declares no language version range`;
-	if (!Array.isArray(profile.extensions) || profile.extensions.length === 0)
-		return `${path} declares no extensions`;
+	if (!Array.isArray(profile.extensions) && !Array.isArray(profile.filenames))
+		return `${path} declares no extensions or filenames`;
+	if (
+		Array.isArray(profile.filenames) &&
+		profile.extensions.length === 0 &&
+		profile.filenames.length === 0
+	)
+		return `${path} declares no extensions or filenames`;
+	// A formatter-only profile carries no documentation rules yet (migration
+	// path for the formatter adapter layer): codec and units are optional.
+	if (profile.formatterOnly === true) {
+		const formatter = profile.formatter;
+		if (!formatter || typeof formatter !== "object")
+			return `${path} is formatter-only but declares no formatter`;
+		if (!FORMATTER_ADAPTERS.has(formatter.adapter))
+			return `${path} declares an unsupported formatter adapter`;
+		const dependency = formatter.dependency;
+		if (
+			!dependency ||
+			typeof dependency !== "object" ||
+			!DEPENDENCY_SOURCES.has(dependency.source)
+		)
+			return `${path} declares an unsupported formatter dependency source`;
+		if (
+			formatter.settingsKey !== undefined &&
+			typeof formatter.settingsKey !== "string"
+		)
+			return `${path} declares an invalid formatter settings key`;
+		return null;
+	}
 	if (!profile.codec || typeof profile.codec !== "object")
 		return `${path} declares no codec`;
 	if (
@@ -205,6 +244,8 @@ export function packForPath(path, registry = getRegistry()) {
 	const extension = extname(path).toLowerCase();
 	for (const pack of registry.packs.values()) {
 		for (const profile of pack.profiles.values()) {
+			// Formatter-only profiles own formatting, not the documentation path.
+			if (profile.formatterOnly === true) continue;
 			if (profile.extensions.some((value) => value.toLowerCase() === extension))
 				return { pack, profile };
 		}

@@ -32,6 +32,7 @@
       "c4_level": "component",
       "responsibility": "Resolves declared dependency providers such as tree-sitter, regex, npm, and external commands to discover units and run formatters.",
       "modules": [
+        "src/engine/formatters.mjs",
         "src/engine/providers.mjs"
       ],
       "depends_on": [
@@ -91,6 +92,7 @@
       "c4_level": "component",
       "responsibility": "Renders the settings menu from the pack registry and persists effective policy.",
       "modules": [
+        "src/engine/pack-settings.mjs",
         "src/policy"
       ],
       "depends_on": [

@@ -1,0 +1,26 @@
+{
+	"id": "modern",
+	"languageVersions": ">=5.0",
+	"extensions": [".ts", ".tsx", ".mts", ".cts", ".js", ".jsx", ".mjs", ".cjs"],
+	"formatterOnly": true,
+	"formatter": {
+		"adapter": "stdin-binary",
+		"checkMode": "stdout-diff",
+		"label": "@biomejs/biome 2.5.12",
+		"settingsKey": "formatTypescriptJavascript",
+		"dependency": {
+			"provider": "npm",
+			"source": "plugin-node-modules",
+			"package": "@biomejs/biome",
+			"version": "2.5.12",
+			"bin": "biome"
+		},
+		"args": ["format", "--stdin-file-path", "{path}", "--vcs-enabled=false"],
+		"cleanExit": [0],
+		"diagnostics": "stderr"
+	},
+	"units": {
+		"provider": "regex",
+		"pattern": "(?!)x"
+	}
+}

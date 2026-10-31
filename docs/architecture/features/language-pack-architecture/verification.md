@@ -27,3 +27,15 @@ chains to `commit-msg-user` itself, so the managed hook's chain recursed
 infinitely (1,256 orphaned bash processes). Fixed by removing the
 self-referential chain block from the preserved hook. The installer should
 sanitize this pattern when preserving foreign hooks.
+
+### Phase 2a — formatter adapters and registry-driven settings (2026-10-31)
+
+- `npm test`: 154 cases, 154 pass, 0 fail. `npx biome check src tests`: clean. `npm run verify`: complete.
+- FA-01/02/03 partial: `tests/engine.test.mjs` "the stdin-binary adapter declarations resolve for embedded packs"; adapter dispatch exercised through the gate for Ruff, Biome, and Prettier via the embedded packs.
+- FA-05: "a pack without a formatter runs no formatting pass".
+- FA-08 partial: registry validation refuses unknown adapters and dependency sources (`validateProfile`).
+- SS-01/02 partial: `tests/engine.test.mjs` "settings surface renders one group per installed pack" — schema generated from the registry, version ranges in descriptions.
+- SS-03 partial: "settings surface renders stale policy packs as not installed".
+- REQ-028 engine audit: formatter branches for Ruff/Biome/Prettier removed from `src/hook/run.mjs`; rustfmt retained as the documented REQ-028 migration exception.
+- REQ-029: formatter-less profiles produce no formatting pass (Lua regression test).
+- REQ-031: the engine provisions nothing by default; the legacy tools directory is consulted only where an embedded pack explicitly declares `legacy-engine-tools` during migration.

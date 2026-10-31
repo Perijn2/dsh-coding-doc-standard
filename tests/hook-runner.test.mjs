@@ -18,13 +18,13 @@ import { mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
+import { formatterDeclarationFor } from "../src/engine/formatters.mjs";
 import { checkProjectPublicUnits } from "../src/hook/public-unit-adapter.mjs";
 import {
 	buildCandidate,
 	candidateFromPayload,
 	checkFormatting,
 	checkSourcePublicUnits,
-	formatterProfile,
 	loadPolicy,
 } from "../src/hook/run.mjs";
 
@@ -89,22 +89,21 @@ const formatterPolicy = {
 	formatDockerCompose: true,
 };
 
-test("selects only pinned fast formatter profiles", () => {
-	const policy = formatterPolicy;
-	assert.equal(formatterProfile("example.py", policy), "python");
-	assert.equal(formatterProfile("example.ts", policy), "typescriptJavascript");
-	assert.equal(formatterProfile("example.tsx", policy), "typescriptJavascript");
-	assert.equal(formatterProfile("example.jsx", policy), "typescriptJavascript");
-	assert.equal(formatterProfile("compose.yaml", policy), "dockerCompose");
+test("resolves formatter declarations from packs, never from engine knowledge", () => {
 	assert.equal(
-		formatterProfile("example.rs", { ...policy, formatRust: false }),
-		null,
+		formatterDeclarationFor("example.py").formatter.settingsKey,
+		"formatPython",
 	);
 	assert.equal(
-		formatterProfile("example.rs", { ...policy, formatRust: true }),
-		"rust",
+		formatterDeclarationFor("example.tsx").formatter.label,
+		"@biomejs/biome 2.5.12",
 	);
-	assert.equal(formatterProfile("example.cpp", policy), null);
+	assert.equal(
+		formatterDeclarationFor("compose.yaml").formatter.label,
+		"prettier 3.9.6",
+	);
+	assert.equal(formatterDeclarationFor("example.rs"), null);
+	assert.equal(formatterDeclarationFor("example.cpp"), null);
 	for (const path of [
 		"example.go",
 		"example.cs",
@@ -117,11 +116,12 @@ test("selects only pinned fast formatter profiles", () => {
 		"Example.swift",
 		"example.dart",
 		"Example.hs",
-		"example.lua",
 		"Example.scala",
 	]) {
-		assert.equal(formatterProfile(path, policy), null, path);
+		assert.equal(formatterDeclarationFor(path), null, path);
 	}
+	// The Lua pack owns documentation, not formatting.
+	assert.equal(formatterDeclarationFor("example.lua"), null);
 });
 
 test("checks direct exported TypeScript and JavaScript units only when enabled", () => {
