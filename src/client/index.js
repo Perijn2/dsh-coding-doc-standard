@@ -5,14 +5,14 @@
  *
  * @remarks
  * Usage:
- *   Core principle: Group every language's policy in one expandable card while
- *   leaving policy execution and formatter versions to the host plugin.
+ *   Core principle: Render one settings group per installed language pack from
+ *   the host registry catalog, keeping engine-wide controls under General.
  *   Setup: The DSH client loads this package through the manifest client roster.
- *   Workflow: Bind the settings namespace, expand a language card, and persist
- *   documentation, formatter, and custom public-unit hook settings through it.
+ *   Workflow: Bind the settings namespace, tune General, then expand a pack
+ *   card to toggle profiles, formatters, and custom public-unit hooks.
  *   API guide: The module exports Cordis-compatible name, inject, and apply fields.
- *   Worked example: Open Coding Documentation Standard in Settings and configure
- *   the language whose pending writes should be checked.
+ *   Worked example: Open Coding Documentation Standard in Settings and disable a
+ *   pack profile to stop its pending-write checks.
  */
 
 window.__ModuleLoader__.load({
@@ -24,19 +24,10 @@ window.__ModuleLoader__.load({
 		const NS = "coding-doc-standard";
 		const NAV_MARKER = "data-coding-doc-standard-settings-nav";
 		const SETTINGS_LABEL = "Coding Documentation Standard";
+		// Languages whose documentation is still enforced by the built-in rule
+		// sets. Languages covered by installed packs render from the pack
+		// registry catalog instead.
 		const languages = [
-			{
-				key: "python",
-				label: "Python",
-				summary: "Module and public-unit documentation.",
-				formatter: ["formatPython", "Ruff 0.16.6"],
-			},
-			{
-				key: "typescriptJavascript",
-				label: "TypeScript / JavaScript",
-				summary: "Module and exported-unit documentation.",
-				formatter: ["formatTypescriptJavascript", "Biome 2.5.12"],
-			},
 			{
 				key: "rust",
 				label: "Rust",
@@ -49,12 +40,6 @@ window.__ModuleLoader__.load({
 				label: "C / C++",
 				summary: "Doxygen-compatible file and public-unit documentation.",
 				hook: true,
-			},
-			{
-				key: "dockerCompose",
-				label: "Docker Compose",
-				summary: "Root and service documentation comments.",
-				formatter: ["formatDockerCompose", "Prettier 3.9.6"],
 			},
 			{
 				key: "go",
@@ -117,12 +102,6 @@ window.__ModuleLoader__.load({
 				hook: true,
 			},
 			{
-				key: "lua",
-				label: "Lua",
-				summary: "Source and project-defined public-unit documentation.",
-				hook: true,
-			},
-			{
 				key: "scala",
 				label: "Scala",
 				summary: "Source and public-unit documentation.",
@@ -140,6 +119,8 @@ window.__ModuleLoader__.load({
 .cds-settings-stat-value { font-size:13px; font-weight:600; line-height:20px; }
 .cds-settings-list { display:flex; flex-direction:column; gap:10px; }
 .cds-language-card { overflow:hidden; border:1px solid var(--dsw-alias-border-l2); border-radius:14px; background:var(--dsw-alias-bg-layer-3); }
+.cds-section-title { margin:8px 2px 0; font-size:15px; font-weight:600; line-height:22px; }
+.cds-section-note { margin:0 2px; color:var(--dsw-alias-label-tertiary); font-size:12px; line-height:18px; }
 .cds-language-summary { display:flex; align-items:center; gap:12px; padding:14px 16px; cursor:pointer; list-style:none; }
 .cds-language-summary::-webkit-details-marker { display:none; }
 .cds-language-chevron { width:8px; height:8px; border-right:2px solid currentColor; border-bottom:2px solid currentColor; transform:rotate(-45deg); transition:transform .15s; }
@@ -297,6 +278,239 @@ window.__ModuleLoader__.load({
 		}
 
 		/**
+		 * Parses the host-served JSON pack catalog (REQ-022).
+		 *
+		 * @param {string} [raw] - The packCatalog config value.
+		 * @returns {{packs: object[], stale: string[]} | null} Catalog, or null when absent or malformed.
+		 */
+		function parseCatalog(raw) {
+			if (typeof raw !== "string") return null;
+			try {
+				const parsed = JSON.parse(raw);
+				if (!parsed || !Array.isArray(parsed.packs)) return null;
+				return { packs: parsed.packs, stale: parsed.stale ?? [] };
+			} catch {
+				return null;
+			}
+		}
+
+		/**
+		 * Renders a section heading with an optional note.
+		 *
+		 * @param {object} properties - Heading text plus optional note.
+		 * @returns {React.ReactElement} Section heading block.
+		 */
+		function SectionTitle({ note, title }) {
+			return React.createElement(
+				React.Fragment,
+				null,
+				React.createElement("h2", { className: "cds-section-title" }, title),
+				note
+					? React.createElement("p", { className: "cds-section-note" }, note)
+					: null,
+			);
+		}
+
+		/**
+		 * Renders the four custom public-unit hook fields of one language.
+		 *
+		 * @param {object} properties - Hook language key plus scope, values, and writability.
+		 * @returns {React.ReactElement} Hook settings block.
+		 */
+		function HookFields({ disabled, legacyKey, scope, value }) {
+			const prefix = `${legacyKey}Hook`;
+			return React.createElement(
+				"div",
+				{ className: "cds-hook" },
+				React.createElement(
+					"div",
+					{ className: "cds-hook-heading" },
+					"Custom public-unit hook",
+				),
+				React.createElement(TextSetting, {
+					disabled,
+					label: "Command",
+					help: "Leave empty to use no custom adapter.",
+					value: value[`${prefix}Command`],
+					onCommit: (next) => scope.set(`${prefix}Command`, next),
+				}),
+				React.createElement(TextSetting, {
+					disabled,
+					label: "Arguments",
+					help: 'JSON string array, for example ["--project","."].',
+					value: value[`${prefix}Args`],
+					onCommit: (next) => scope.set(`${prefix}Args`, next),
+				}),
+				React.createElement(TextSetting, {
+					disabled,
+					label: "Working directory",
+					help: "Optional; defaults to the pending write workspace.",
+					value: value[`${prefix}Cwd`],
+					onCommit: (next) => scope.set(`${prefix}Cwd`, next),
+				}),
+				React.createElement(TextSetting, {
+					disabled,
+					label: "Timeout (ms)",
+					type: "number",
+					help: "From 1 to 60000 milliseconds.",
+					value: value[`${prefix}TimeoutMs`],
+					onCommit: (next) =>
+						scope.set(`${prefix}TimeoutMs`, Number(next) || 10000),
+				}),
+			);
+		}
+
+		/**
+		 * Answers whether a pack's documentation currently enforces.
+		 *
+		 * @param {object} pack - Catalog pack entry.
+		 * @param {object} value - Current settings values.
+		 * @returns {boolean} Whether documentation checks run for this pack.
+		 */
+		function packDocsEnabled(pack, value) {
+			if (pack.legacyDocsKey) return value[pack.legacyDocsKey] !== false;
+			return !pack.profiles.some(
+				(profile) => value.packs?.[pack.id]?.[profile.id] === false,
+			);
+		}
+
+		/**
+		 * Renders one expandable card for an installed language pack: one
+		 * toggle per profile with its language version range (REQ-022,
+		 * REQ-023) plus the formatter routing and hooks it declares.
+		 *
+		 * @param {object} properties - Pack entry plus scope, values, and writability.
+		 * @returns {React.ReactElement} Pack card.
+		 */
+		function PackCard({ pack, scope, value, writable }) {
+			const masterEnabled = value.enabled === true;
+			const docsEnabled = packDocsEnabled(pack, value);
+			return React.createElement(
+				"details",
+				{ className: "cds-language-card" },
+				React.createElement(
+					"summary",
+					{ className: "cds-language-summary" },
+					React.createElement("span", {
+						className: "cds-language-chevron",
+						"aria-hidden": "true",
+					}),
+					React.createElement(
+						"span",
+						{ className: "cds-language-copy" },
+						React.createElement(
+							"span",
+							{ className: "cds-language-title" },
+							pack.label,
+						),
+						React.createElement(
+							"span",
+							{ className: "cds-language-description" },
+							pack.profiles
+								.map((profile) => `${profile.id} · ${profile.languageVersions}`)
+								.join(", "),
+						),
+					),
+					React.createElement(
+						"span",
+						{ className: "cds-language-status" },
+						docsEnabled ? "Enabled" : "Disabled",
+					),
+				),
+				React.createElement(
+					"div",
+					{ className: "cds-language-body" },
+					pack.legacyDocsKey
+						? React.createElement(Toggle, {
+								checked: value[pack.legacyDocsKey] === true,
+								disabled: !writable || !masterEnabled,
+								label: "Documentation",
+								description:
+									"Built-in documentation rules. This language moves to its pack when its rules are ported.",
+								onChange: (next) => void scope.set(pack.legacyDocsKey, next),
+							})
+						: pack.profiles.map((profile) =>
+								React.createElement(Toggle, {
+									key: profile.id,
+									checked: value.packs?.[pack.id]?.[profile.id] !== false,
+									disabled: !writable || !masterEnabled,
+									label: `Documentation (${profile.id})`,
+									description: `Language versions ${profile.languageVersions}. Disable to stop this profile from enforcing.`,
+									onChange: (next) =>
+										void scope.mutate([
+											{
+												op: "set",
+												path: ["packs", pack.id, profile.id],
+												value: next,
+											},
+										]),
+								}),
+							),
+					...pack.profiles.map((profile) =>
+						profile.formatterSettingsKey
+							? React.createElement(Toggle, {
+									key: profile.id,
+									checked: value[profile.formatterSettingsKey] === true,
+									disabled:
+										!writable || !docsEnabled || value.formatOnWrite !== true,
+									label: `Format (${profile.formatterLabel ?? "formatter"})`,
+									description:
+										"Check pending content with this pack formatter before writing.",
+									onChange: (next) =>
+										void scope.set(profile.formatterSettingsKey, next),
+								})
+							: null,
+					),
+					pack.hooks
+						? React.createElement(HookFields, {
+								disabled: !writable || !docsEnabled,
+								legacyKey: pack.legacyDocsKey ?? pack.id,
+								scope,
+								value,
+							})
+						: null,
+				),
+			);
+		}
+
+		/**
+		 * Renders the not-installed entry for policy that references an absent
+		 * pack, so stale policy stays visible (REQ-024).
+		 *
+		 * @param {object} properties - Stale pack id.
+		 * @returns {React.ReactElement} Not-installed card.
+		 */
+		function StalePackCard({ id }) {
+			return React.createElement(
+				"div",
+				{ className: "cds-language-card" },
+				React.createElement(
+					"div",
+					{ className: "cds-language-summary" },
+					React.createElement(
+						"span",
+						{ className: "cds-language-copy" },
+						React.createElement(
+							"span",
+							{ className: "cds-language-title" },
+							id,
+						),
+						React.createElement(
+							"span",
+							{ className: "cds-language-description" },
+							"Policy references a pack that is absent. Reinstall the pack to enforce it again.",
+						),
+					),
+					React.createElement(
+						"span",
+						{ className: "cds-language-status" },
+						"Not installed",
+					),
+				),
+			);
+		}
+
+		/**
 		 * Renders one expandable language configuration card.
 		 *
 		 * @param {object} properties - Language card properties.
@@ -426,12 +640,22 @@ window.__ModuleLoader__.load({
 			);
 			if (snapshot.status !== "ready") return null;
 			const value = snapshot.value ?? {};
-			const enabledLanguages = languages.filter(
-				({ key }) => value[key] === true,
-			).length;
-			const enabledFormatters = languages.filter(
-				({ formatter }) => formatter && value[formatter[0]] === true,
-			).length;
+			const catalog = parseCatalog(value.packCatalog);
+			const packs = catalog ? catalog.packs : [];
+			const stalePacks = catalog ? catalog.stale : [];
+			const writable = snapshot.writable;
+			const docTotal = languages.length + packs.length;
+			const docEnabled =
+				languages.filter(({ key }) => value[key] === true).length +
+				packs.filter((pack) => packDocsEnabled(pack, value)).length;
+			const formatterKeys = packs
+				.flatMap((pack) =>
+					pack.profiles.map((profile) => profile.formatterSettingsKey),
+				)
+				.filter(Boolean);
+			const formatterEnabled =
+				formatterKeys.filter((key) => value[key] === true).length +
+				(value.formatRust === true ? 1 : 0);
 			return React.createElement(
 				"section",
 				{ className: "cds-settings-section" },
@@ -446,7 +670,7 @@ window.__ModuleLoader__.load({
 					React.createElement(
 						"p",
 						{ className: "cds-settings-summary" },
-						"Configure documentation enforcement, formatters, and custom hooks by language.",
+						"Enforcement follows the installed language packs; engine-wide controls live under General.",
 					),
 				),
 				React.createElement(
@@ -463,7 +687,7 @@ window.__ModuleLoader__.load({
 						React.createElement(
 							"span",
 							{ className: "cds-settings-stat-value" },
-							`${enabledLanguages} of ${languages.length} enabled`,
+							`${docEnabled} of ${docTotal} enabled`,
 						),
 					),
 					React.createElement(
@@ -477,31 +701,121 @@ window.__ModuleLoader__.load({
 						React.createElement(
 							"span",
 							{ className: "cds-settings-stat-value" },
-							`${enabledFormatters} of 4 enabled`,
+							`${formatterEnabled} of ${formatterKeys.length + 1} enabled`,
 						),
 					),
 				),
 				React.createElement(Toggle, {
 					checked: value.enabled === true,
-					disabled: !snapshot.writable,
+					disabled: !writable,
 					label: "Enable coding documentation enforcement",
-					description: "Master control for all language documentation checks.",
+					description:
+						"Master control for every pack, formatter, and hook below.",
 					onChange: (next) => void scope.set("enabled", next),
+				}),
+				React.createElement(SectionTitle, {
+					title: "General",
+					note: "Engine-wide controls shared by every language pack.",
 				}),
 				React.createElement(Toggle, {
 					checked: value.formatOnWrite === true,
-					disabled: !snapshot.writable || value.enabled !== true,
+					disabled: !writable || value.enabled !== true,
 					label: "Enable pre-write formatter enforcement",
 					description: "Master control for language formatter checks.",
 					onChange: (next) => void scope.set("formatOnWrite", next),
 				}),
 				React.createElement(Toggle, {
 					checked: value.blockOnMissingFormatter === true,
-					disabled: !snapshot.writable || value.formatOnWrite !== true,
+					disabled: !writable || value.formatOnWrite !== true,
 					label: "Block when a formatter is unavailable",
 					description:
 						"Fail closed instead of allowing unformatted pending content.",
 					onChange: (next) => void scope.set("blockOnMissingFormatter", next),
+				}),
+				React.createElement(Toggle, {
+					checked: value.systemPromptAdvisory === true,
+					disabled: !writable,
+					label: "System-prompt advisory",
+					description:
+						"Tell the agent the documentation rules before it writes.",
+					onChange: (next) => void scope.set("systemPromptAdvisory", next),
+				}),
+				React.createElement(Toggle, {
+					checked: value.validatorFailOpen === true,
+					disabled: !writable,
+					label: "Allow writes when a check cannot finish",
+					description:
+						"Fail open with a visible notice. Turn off to block instead.",
+					onChange: (next) => void scope.set("validatorFailOpen", next),
+				}),
+				React.createElement(TextSetting, {
+					disabled: !writable,
+					label: "Validation budget (ms)",
+					type: "number",
+					help: "Shared budget for every check on one pending write, at least 1000.",
+					value: `${value.validatorTimeoutMs ?? ""}`,
+					onCommit: (next) =>
+						scope.set("validatorTimeoutMs", Number(next) || 20000),
+				}),
+				React.createElement(TextSetting, {
+					disabled: !writable,
+					label: "Maximum findings per denial",
+					type: "number",
+					help: "Longer finding lists are truncated in the denial message.",
+					value: `${value.aggregateMaxFindings ?? ""}`,
+					onCommit: (next) =>
+						scope.set("aggregateMaxFindings", Number(next) || 15),
+				}),
+				React.createElement(TextSetting, {
+					disabled: !writable,
+					label: "Matched tools",
+					help: "Comma-separated tool names or globs the guard watches.",
+					value: value.matchedTools ?? "",
+					onCommit: (next) => scope.set("matchedTools", next),
+				}),
+				React.createElement(TextSetting, {
+					disabled: !writable,
+					label: "Ignored paths",
+					help: "Extra comma-separated globs to skip. Vendored, generated, minified, and lockfile paths are always skipped.",
+					value: value.ignoredPaths ?? "",
+					onCommit: (next) => scope.set("ignoredPaths", next),
+				}),
+				React.createElement(SectionTitle, {
+					title: "Language packs",
+					note: "One group per installed pack, listing each profile's language version range.",
+				}),
+				catalog
+					? React.createElement(
+							"div",
+							{ className: "cds-settings-list" },
+							...packs.map((pack) =>
+								React.createElement(PackCard, {
+									key: pack.id,
+									pack,
+									scope,
+									value,
+									writable,
+								}),
+							),
+							...stalePacks.map((id) =>
+								React.createElement(StalePackCard, { key: id, id }),
+							),
+							packs.length === 0 && stalePacks.length === 0
+								? React.createElement(
+										"p",
+										{ className: "cds-section-note" },
+										"No language packs are installed.",
+									)
+								: null,
+						)
+					: React.createElement(
+							"p",
+							{ className: "cds-section-note" },
+							"The pack catalog is unavailable; restart the application after installing language packs.",
+						),
+				React.createElement(SectionTitle, {
+					title: "Built-in languages",
+					note: "Languages without installed packs. Each moves into a pack as its rules are ported.",
 				}),
 				React.createElement(
 					"div",

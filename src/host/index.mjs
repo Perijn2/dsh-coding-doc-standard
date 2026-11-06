@@ -29,6 +29,7 @@ import {
 	packSettingsApply,
 	packSettingsFields,
 } from "../engine/pack-settings.mjs";
+import { getRegistry } from "../engine/registry.mjs";
 import { runFormatterCommand } from "../formatter/command.mjs";
 import {
 	formatAndWrite,
@@ -221,6 +222,50 @@ function readStartupPolicy() {
  */
 const startupPolicy = readStartupPolicy();
 
+/** Maps pack ids whose legacy policy key is not the kebab-case pack id. */
+const packLegacyKeys = {
+	"typescript-javascript": "typescriptJavascript",
+	"docker-compose": "dockerCompose",
+};
+
+/**
+ * Serializes the installed pack registry into the settings catalog so the
+ * page renders one group per pack with per-profile version ranges and
+ * formatter routing, plus not-installed entries for stale policy (REQ-022,
+ * REQ-023, REQ-024). A formatter-only pack's documentation is still enforced
+ * by the legacy rule set, so its toggle addresses the legacy policy field.
+ *
+ * @returns {string} JSON catalog of installed packs and stale policy entries.
+ */
+function buildPackCatalog() {
+	const registry = getRegistry();
+	const packs = [];
+	for (const pack of registry.packs.values()) {
+		const legacyKey = packLegacyKeys[pack.manifest.id] ?? pack.manifest.id;
+		const profiles = [...pack.profiles.values()];
+		packs.push({
+			id: pack.manifest.id,
+			label: pack.manifest.label ?? pack.manifest.id,
+			packVersion: pack.manifest.packVersion ?? "",
+			legacyDocsKey: profiles.every((p) => p.formatterOnly === true)
+				? legacyKey
+				: null,
+			hooks: adapterLanguages.includes(legacyKey),
+			profiles: profiles.map((profile) => ({
+				id: profile.id,
+				languageVersions: profile.languageVersions,
+				formatterOnly: profile.formatterOnly === true,
+				formatterLabel: profile.formatter?.label ?? null,
+				formatterSettingsKey: profile.formatter?.settingsKey ?? null,
+			})),
+		});
+	}
+	const stale = Object.keys(startupPolicy.packProfiles ?? {}).filter(
+		(packId) => !registry.packs.has(packId),
+	);
+	return JSON.stringify({ packs, stale });
+}
+
 /**
  * Flat live configuration served to the settings card. Every field the card
  * edits is volatile, so a profile edit commits into this mount without a
@@ -350,6 +395,13 @@ export const Config = z.object({
 		}),
 	),
 	packs: packSettingsFields(z, startupPolicy).volatile(),
+	packCatalog: z
+		.string()
+		.default(buildPackCatalog())
+		.volatile()
+		.description(
+			"JSON catalog of installed language packs rendered by the settings page.",
+		),
 });
 
 /**

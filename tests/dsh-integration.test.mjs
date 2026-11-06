@@ -79,6 +79,7 @@ const CONFIG_KEYS = [
 	...FORMAT_KEYS,
 	...HOOK_KEYS,
 	"packs",
+	"packCatalog",
 ];
 
 const COMPLIANT_TS = [
@@ -301,6 +302,33 @@ test("serves the coding-doc-standard settings document with the full schema", as
 			"function",
 			`volatile ref for ${key}`,
 		);
+});
+
+test("serves the registry-driven pack catalog to the settings page", async () => {
+	const catalog = JSON.parse(config.packCatalog.get());
+	const byId = new Map(catalog.packs.map((pack) => [pack.id, pack]));
+	assert.deepEqual([...byId.keys()].sort(), [
+		"docker-compose",
+		"lua",
+		"python",
+		"typescript-javascript",
+	]);
+	// The Lua pilot owns its documentation, so its toggles write the packs
+	// field; formatter-only packs still write the legacy rule field.
+	assert.equal(byId.get("lua").legacyDocsKey, null);
+	const py = byId.get("python").legacyDocsKey;
+	assert.equal(py, "python");
+	const ts = byId.get("typescript-javascript").legacyDocsKey;
+	assert.equal(ts, "typescriptJavascript");
+	const compose = byId.get("docker-compose").legacyDocsKey;
+	assert.equal(compose, "dockerCompose");
+	for (const pack of catalog.packs) {
+		assert.ok(pack.label, pack.id + " label");
+		for (const profile of pack.profiles) {
+			assert.ok(profile.languageVersions, pack.id + " version range");
+		}
+	}
+	assert.deepEqual(catalog.stale, []);
 });
 
 test("registers the workspace verifier as a DSH command", async () => {

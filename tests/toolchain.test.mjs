@@ -50,7 +50,7 @@ test("pins pre-write formatter versions in package and policy metadata", () => {
 test("pins the TypeScript compiler parser for combined documentation checks", () => {
 	assert.equal(packageJson.dependencies.typescript, "5.9.3");
 	assert.equal(policy.publicUnitDocs.typescriptJavascript, false);
-	assert.match(client, /key: "typescriptJavascript"/);
+	assert.match(client, /formatterSettingsKey/);
 	assert.doesNotMatch(client, /typescriptJavascriptPublicUnits/);
 });
 
@@ -143,13 +143,20 @@ test("enables every documentation profile but only provisionable fast formatters
 test("registers formatter controls in the dedicated settings navigation item", () => {
 	for (const field of [
 		"formatOnWrite",
-		"formatPython",
-		"formatTypescriptJavascript",
 		"formatRust",
-		"formatDockerCompose",
+		"blockOnMissingFormatter",
 		"blockOnMissingFormatter",
 	]) {
 		assert.ok(client.includes(field), `missing settings control: ${field}`);
+	}
+	// Per-language formatter toggles render from the host pack catalog.
+	for (const control of [
+		"packCatalog",
+		"formatterSettingsKey",
+		"languageVersions",
+		"Not installed",
+	]) {
+		assert.ok(client.includes(control), `missing catalog control: ${control}`);
 	}
 	assert.ok(client.includes("Enable pre-write formatter enforcement"));
 	assert.ok(client.includes("Enable coding documentation enforcement"));
@@ -158,8 +165,8 @@ test("registers formatter controls in the dedicated settings navigation item", (
 	assert.ok(client.includes("cds-language-card"));
 	assert.ok(client.includes('"details"'));
 	assert.ok(!client.includes("\u00e2\u20ac\u201d"));
-	assert.ok(client.includes('ctx.slots.inject("plugins.item"'));
-	assert.ok(client.includes('name: "plugins.item"'));
+	assert.ok(client.includes('ctx.slots.inject("settings.section"'));
+	assert.ok(client.includes('name: "settings.section"'));
 	assert.ok(client.includes("id: NS"));
 	assert.ok(client.includes("(listener) => scope.subscribe(listener)"));
 	assert.ok(client.includes("() => scope.getSnapshot()"));
