@@ -530,13 +530,14 @@ window.__ModuleLoader__.load({
 				() => registerSettingsNavIcon(),
 				`${NS}: settings navigation icon`,
 			);
-			// Third-party plugin pages register into the Plugins page's
-			// `plugins.item` slot while the host serves this namespace.
+			// A full Settings page registers through the `settings.section`
+			// slot, the same contribution the built-in feature pages use,
+			// while the host serves this namespace.
 			const mount = () =>
-				ctx.slots.inject("plugins.item", () =>
+				ctx.slots.inject("settings.section", () =>
 					ctx.slots.register(
 						{
-							name: "plugins.item",
+							name: "settings.section",
 							id: NS,
 							order: 24,
 							label: () => SETTINGS_LABEL,
@@ -548,10 +549,10 @@ window.__ModuleLoader__.load({
 			if (typeof ctx.configForms?.whileServed === "function") {
 				ctx.effect(
 					() => ctx.configForms.whileServed([NS], mount),
-					`${NS}: plugins.item registration`,
+					`${NS}: settings.section registration`,
 				);
 			} else {
-				ctx.effect(mount, `${NS}: plugins.item registration`);
+				ctx.effect(mount, `${NS}: settings.section registration`);
 			}
 		};
 		return module.exports;
