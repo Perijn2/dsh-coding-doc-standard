@@ -520,12 +520,12 @@ window.__ModuleLoader__.load({
 		}
 
 		exports.name = NS;
-		// Only `slots` is a hard requirement: the settings form is resolved
-		// opportunistically so a host without the client settings service
-		// still boots and renders a fallback instead of staying pending.
-		exports.inject = ["slots"];
+		// Cordis throws when `apply` reads a service property that the plugin
+		// did not declare, so both required services must be listed here;
+		// the shipped Web composition always provides `configForms`.
+		exports.inject = ["slots", "configForms"];
 		exports.apply = (ctx) => {
-			const scope = ctx.configForms?.get(NS);
+			const scope = ctx.configForms.get(NS);
 			ctx.effect(
 				() => registerSettingsNavIcon(),
 				`${NS}: settings navigation icon`,

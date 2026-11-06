@@ -8,7 +8,7 @@
  *   Core principle: Keep bundle registration thin and enforce pending writes
  *   inside the asynchronous DSH tool policy pipeline.
  *   Setup: Load this package through its bundle patch in a DSH profile.
- *   Workflow: Resolve settings into one live policy object, then register one
+ *   Workflow: Resolve the volatile plugin Config into one live policy object, then register one
  *   `tools/pre-execute` listener that builds the pending candidate, runs every
  *   check concurrently, and answers with the full finding list in one pass.
  *   API guide: Cordis invokes the exported `apply` lifecycle function, and the
@@ -18,16 +18,16 @@
 
 import { spawn } from "node:child_process";
 import { randomUUID } from "node:crypto";
-import { existsSync } from "node:fs";
+import { existsSync, readFileSync } from "node:fs";
 import { mkdir, readFile, rename, writeFile } from "node:fs/promises";
 import { homedir } from "node:os";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { defineTool } from "@deepseek-ai/dsh-tools";
+import z from "@deepseek-ai/schemastery";
 import {
 	packSettingsApply,
 	packSettingsFields,
-	packSettingsSource,
 } from "../engine/pack-settings.mjs";
 import { runFormatterCommand } from "../formatter/command.mjs";
 import {
@@ -130,61 +130,227 @@ function hookSettings(policy, language) {
 }
 
 /**
- * Builds the nested Schemastery section for one language's adapter hook.
+ * Languages listed on the settings card, each with its field description.
  *
- * @param {object} schemaTools - Schemastery module.
- * @param {Record<string, unknown>} policy - Effective policy configuration.
- * @param {string} language - Policy language key.
- * @returns {object} Schemastery object schema for the adapter group.
+ * @type {{key: string, description: string}[]}
  */
-function adapterSection(schemaTools, policy, language) {
-	const current = hookSettings(policy, language);
-	return schemaTools
-		.object({
-			command: schemaTools
-				.string()
-				.default(current.command)
-				.description(
-					"Executable that receives one JSON candidate on standard input and answers with { violations: [...] }. Leave empty to disable the adapter.",
-				),
-			args: schemaTools
-				.string()
-				.default(current.args)
-				.description('Argument array as JSON text, for example ["--strict"].'),
-			cwd: schemaTools
-				.string()
-				.default(current.cwd)
-				.description(
-					"Optional working directory; empty resolves against the workspace.",
-				),
-			timeoutMs: schemaTools
-				.number()
-				.default(current.timeoutMs)
-				.min(500)
-				.step(500)
-				.description("Adapter budget in milliseconds."),
-		})
-		.collapse(!current.command)
-		.description(adapterLanguageInfo[language]?.description ?? "");
+const languageFields = [
+	{
+		key: "python",
+		description: "Python modules, docstring headers, and public docstrings.",
+	},
+	{
+		key: "typescriptJavascript",
+		description:
+			"TypeScript and JavaScript, including optional JSDoc export checks.",
+	},
+	{ key: "rust", description: "Rust file headers and public-unit docs." },
+	{ key: "cCpp", description: "C and C++ Doxygen headers and public units." },
+	{
+		key: "dockerCompose",
+		description: "Compose root and service documentation.",
+	},
+	{ key: "go", description: "Go package headers and declarations." },
+	{ key: "csharp", description: "C# XML documentation headers and members." },
+	{ key: "java", description: "Java Javadoc headers and members." },
+	{ key: "kotlin", description: "Kotlin KDoc headers and declarations." },
+	{ key: "shell", description: "Shell script headers and functions." },
+	{ key: "php", description: "PHP doc headers and declarations." },
+	{ key: "ruby", description: "Ruby headers, classes, and methods." },
+	{ key: "swift", description: "Swift headers and declarations." },
+	{ key: "dart", description: "Dart headers and declarations." },
+	{ key: "haskell", description: "Haskell Haddock headers and declarations." },
+	{ key: "lua", description: "Lua EmmyLua headers and functions." },
+	{ key: "scala", description: "Scala Scaladoc headers and definitions." },
+];
+
+/**
+ * Declares one live boolean policy field.
+ *
+ * @param {boolean} value - Startup default for the field.
+ * @param {string} description - Editor description for the field.
+ * @returns {object} Schemastery volatile boolean field.
+ */
+function booleanField(value, description) {
+	return z.boolean().default(value).volatile().description(description);
 }
 
 /**
- * Builds the nested Schemastery sections for every exposed adapter hook.
+ * Merges packaged defaults with one persisted policy override.
  *
- * @param {object} schemaTools - Schemastery module.
- * @param {Record<string, unknown>} policy - Effective policy configuration.
- * @returns {object} Schemastery object schema holding every adapter group.
+ * @param {Record<string, any>} defaults - Packaged default policy.
+ * @param {Record<string, any>} override - Persisted override values.
+ * @returns {Record<string, unknown>} Effective startup policy.
  */
-function adapterSettingsSchema(schemaTools, policy) {
-	return schemaTools.object(
-		Object.fromEntries(
-			adapterLanguages.map((language) => [
-				language,
-				adapterSection(schemaTools, policy, language),
-			]),
-		),
-	);
+function mergePolicy(defaults, override) {
+	const policy = {
+		...defaults,
+		...override,
+		languages: { ...defaults.languages, ...override.languages },
+		publicUnitDocs: {
+			...defaults.publicUnitDocs,
+			...override.publicUnitDocs,
+		},
+	};
+	for (const language of adapterLanguages) {
+		if (!["rust", "cCpp"].includes(language))
+			policy.publicUnitDocs[language] = policy.languages[language] !== false;
+	}
+	return policy;
 }
+
+/**
+ * Reads the startup policy synchronously so the Config defaults are static.
+ *
+ * @returns {Record<string, unknown>} Packaged defaults merged with persisted state.
+ */
+function readStartupPolicy() {
+	const defaults = JSON.parse(readFileSync(defaultsPath, "utf8"));
+	if (!existsSync(statePath)) return defaults;
+	try {
+		return mergePolicy(defaults, JSON.parse(readFileSync(statePath, "utf8")));
+	} catch {
+		return defaults;
+	}
+}
+
+/**
+ * Startup policy providing every Config field default.
+ *
+ * @type {Record<string, any>}
+ */
+const startupPolicy = readStartupPolicy();
+
+/**
+ * Flat live configuration served to the settings card. Every field the card
+ * edits is volatile, so a profile edit commits into this mount without a
+ * restart, and the defaults carry the last durable policy so the form opens
+ * on exactly the values the engine is enforcing.
+ *
+ * @type {object}
+ */
+export const Config = z.object({
+	enabled: booleanField(
+		startupPolicy.enabled !== false,
+		"Master switch: when off, the write guard, both commands, and both write-through tools are retracted.",
+	),
+	systemPromptAdvisory: booleanField(
+		startupPolicy.systemPromptAdvisory !== false,
+		"Standing system-prompt note that tells the agent the documentation rules before it writes.",
+	),
+	validatorTimeoutMs: z
+		.number()
+		.default(positiveNumber(startupPolicy.validatorTimeoutMs, 20_000))
+		.min(1000)
+		.step(1000)
+		.volatile()
+		.description(
+			"Shared time budget in milliseconds for every check on one pending write.",
+		),
+	aggregateMaxFindings: z
+		.number()
+		.default(positiveNumber(startupPolicy.aggregateMaxFindings, 15))
+		.min(1)
+		.step(1)
+		.volatile()
+		.description("Maximum number of findings listed in one denial."),
+	validatorFailOpen: booleanField(
+		startupPolicy.validatorFailOpen !== false,
+		"Allow the write with a visible notice when a check could not finish. Turn off to block instead.",
+	),
+	matchedTools: z
+		.string()
+		.default(joinList(startupPolicy.matchedTools))
+		.volatile()
+		.description(
+			"Comma-separated tool names or globs the guard watches, for example mcp__*__write_file.",
+		),
+	ignoredPaths: z
+		.string()
+		.default(joinList(startupPolicy.ignoredPaths))
+		.volatile()
+		.description(
+			"Extra glob paths to skip. Vendored, generated, minified, and lockfile paths are always skipped.",
+		),
+	...Object.fromEntries(
+		languageFields.map(({ key, description }) => [
+			key,
+			booleanField(startupPolicy.languages?.[key] !== false, description),
+		]),
+	),
+	formatOnWrite: booleanField(
+		startupPolicy.formatOnWrite !== false,
+		"Enable the pinned pre-write formatter routing below.",
+	),
+	formatPython: booleanField(
+		startupPolicy.formatPython !== false,
+		"Format Python writes with pinned Ruff.",
+	),
+	formatTypescriptJavascript: booleanField(
+		startupPolicy.formatTypescriptJavascript !== false,
+		"Format TypeScript and JavaScript writes with pinned Biome.",
+	),
+	formatRust: booleanField(
+		startupPolicy.formatRust === true,
+		"Opt-in: format Rust writes with the project's rustfmt.",
+	),
+	formatDockerCompose: booleanField(
+		startupPolicy.formatDockerCompose !== false,
+		"Format Compose writes with pinned Prettier.",
+	),
+	blockOnMissingFormatter: booleanField(
+		startupPolicy.blockOnMissingFormatter !== false,
+		"Block a write when its pinned formatter is not provisioned. Turn off to allow unformatted writes with a notice.",
+	),
+	...Object.fromEntries(
+		adapterLanguages.flatMap((language) => {
+			const current = hookSettings(startupPolicy, language);
+			const note = adapterLanguageInfo[language]?.description ?? "";
+			return [
+				[
+					`${language}HookCommand`,
+					z
+						.string()
+						.default(current.command)
+						.volatile()
+						.description(
+							`${note} Executable that receives one JSON candidate on standard input and answers with { violations: [...] }. Leave empty to disable the adapter.`,
+						),
+				],
+				[
+					`${language}HookArgs`,
+					z
+						.string()
+						.default(current.args)
+						.volatile()
+						.description(
+							'Argument array as JSON text, for example ["--strict"].',
+						),
+				],
+				[
+					`${language}HookCwd`,
+					z
+						.string()
+						.default(current.cwd)
+						.volatile()
+						.description(
+							"Optional working directory; empty resolves against the workspace.",
+						),
+				],
+				[
+					`${language}HookTimeoutMs`,
+					z
+						.number()
+						.default(current.timeoutMs)
+						.min(1)
+						.volatile()
+						.description("Adapter budget in milliseconds."),
+				],
+			];
+		}),
+	),
+	packs: packSettingsFields(z, startupPolicy).volatile(),
+});
 
 /**
  * Converts nested adapter settings values into executable hook policy.
@@ -229,7 +395,7 @@ function configuredHooks(adapters) {
 }
 
 /**
- * Loads the packaged defaults and any persisted user policy.
+ * Loads the packaged defaults merged with any persisted user policy.
  *
  * @returns {Promise<Record<string, unknown>>} Effective policy object.
  */
@@ -237,21 +403,7 @@ export async function loadPolicy() {
 	const defaults = JSON.parse(await readFile(defaultsPath, "utf8"));
 	if (!existsSync(statePath)) return defaults;
 	try {
-		const override = JSON.parse(await readFile(statePath, "utf8"));
-		const policy = {
-			...defaults,
-			...override,
-			languages: { ...defaults.languages, ...override.languages },
-			publicUnitDocs: {
-				...defaults.publicUnitDocs,
-				...override.publicUnitDocs,
-			},
-		};
-		for (const language of adapterLanguages) {
-			if (!["rust", "cCpp"].includes(language))
-				policy.publicUnitDocs[language] = policy.languages[language] !== false;
-		}
-		return policy;
+		return mergePolicy(defaults, JSON.parse(await readFile(statePath, "utf8")));
 	} catch {
 		return defaults;
 	}
@@ -563,268 +715,97 @@ export function installSystemAdvisory(ctx, policy) {
 }
 
 /**
- * Installs the settings section and keeps durable policy in step with it.
+ * Unwraps one resolved Config value, which volatile fields expose as a ref.
  *
- * @param {import('@deepseek-ai/cordis').Context} ctx - Cordis plugin context.
- * @param {Record<string, unknown>} policy - Effective policy at startup.
- * @param {(policy: Record<string, unknown>) => unknown} [onPolicy] - Called with the persisted policy after every settings change.
- * @returns {Promise<void>} Completion once the section is installed.
+ * @param {unknown} value - Raw or volatile Config value.
+ * @returns {unknown} The current plain value.
  */
-async function installSettings(ctx, policy, onPolicy) {
-	try {
-		const settings = await import("@deepseek-ai/dsh-settings");
-		const schemaModule = await import("@deepseek-ai/schemastery");
-		const schemaTools = schemaModule.default ?? schemaModule;
-		if (
-			typeof settings.installSettingsSection !== "function" ||
-			typeof settings.settingsNamespace !== "function"
-		)
-			return;
-		// The panel's own view of the policy. Kept fresh across changes so a
-		// rapid sequence of edits can never rebuild the next policy from a
-		// stale startup snapshot.
-		let current = policy;
-		/**
-		 * Builds one described language toggle.
-		 *
-		 * @param {string} key - Policy language key.
-		 * @param {string} description - UI description for the toggle.
-		 * @returns {object} Schemastery boolean field.
-		 */
-		const languageToggle = (key, description) =>
-			schemaTools
-				.boolean()
-				.default(current.languages[key] !== false)
-				.description(description);
-		const schema = schemaTools.object({
-			general: schemaTools
-				.object({
-					enabled: schemaTools
-						.boolean()
-						.default(current.enabled !== false)
-						.description(
-							"Master switch: when off, the write guard, both commands, and both write-through tools are retracted.",
-						),
-					systemPromptAdvisory: schemaTools
-						.boolean()
-						.default(current.systemPromptAdvisory !== false)
-						.description(
-							"Standing system-prompt note that tells the agent the documentation rules before it writes.",
-						),
-					validatorTimeoutMs: schemaTools
-						.number()
-						.default(positiveNumber(current.validatorTimeoutMs, 20_000))
-						.min(1000)
-						.step(1000)
-						.description(
-							"Shared time budget in milliseconds for every check on one pending write.",
-						),
-					aggregateMaxFindings: schemaTools
-						.number()
-						.default(positiveNumber(current.aggregateMaxFindings, 15))
-						.min(1)
-						.step(1)
-						.description("Maximum number of findings listed in one denial."),
-					validatorFailOpen: schemaTools
-						.boolean()
-						.default(current.validatorFailOpen !== false)
-						.description(
-							"Allow the write with a visible notice when a check could not finish. Turn off to block instead.",
-						),
-					matchedTools: schemaTools
-						.string()
-						.default(joinList(current.matchedTools))
-						.description(
-							"Comma-separated tool names or globs the guard watches, for example mcp__*__write_file.",
-						),
-					ignoredPaths: schemaTools
-						.string()
-						.default(joinList(current.ignoredPaths))
-						.description(
-							"Extra glob paths to skip. Vendored, generated, minified, and lockfile paths are always skipped.",
-						),
-				})
-				.description("Core gate behavior shared by every language."),
-			languages: schemaTools
-				.object({
-					python: languageToggle(
-						"python",
-						"Python modules, docstring headers, and public docstrings.",
-					),
-					typescriptJavascript: languageToggle(
-						"typescriptJavascript",
-						"TypeScript and JavaScript, including optional JSDoc export checks.",
-					),
-					rust: languageToggle(
-						"rust",
-						"Rust file headers and public-unit docs.",
-					),
-					cCpp: languageToggle(
-						"cCpp",
-						"C and C++ Doxygen headers and public units.",
-					),
-					dockerCompose: languageToggle(
-						"dockerCompose",
-						"Compose root and service documentation.",
-					),
-					go: languageToggle("go", "Go package headers and declarations."),
-					csharp: languageToggle(
-						"csharp",
-						"C# XML documentation headers and members.",
-					),
-					java: languageToggle("java", "Java Javadoc headers and members."),
-					kotlin: languageToggle(
-						"kotlin",
-						"Kotlin KDoc headers and declarations.",
-					),
-					shell: languageToggle("shell", "Shell script headers and functions."),
-					php: languageToggle("php", "PHP doc headers and declarations."),
-					ruby: languageToggle("ruby", "Ruby headers, classes, and methods."),
-					swift: languageToggle("swift", "Swift headers and declarations."),
-					dart: languageToggle("dart", "Dart headers and declarations."),
-					haskell: languageToggle(
-						"haskell",
-						"Haskell Haddock headers and declarations.",
-					),
-					lua: languageToggle("lua", "Lua EmmyLua headers and functions."),
-					scala: languageToggle(
-						"scala",
-						"Scala Scaladoc headers and definitions.",
-					),
-				})
-				.description("Turn individual language profiles on or off."),
-			formatting: schemaTools
-				.object({
-					formatOnWrite: schemaTools
-						.boolean()
-						.default(current.formatOnWrite !== false)
-						.description(
-							"Enable the pinned pre-write formatter routing below.",
-						),
-					formatPython: schemaTools
-						.boolean()
-						.default(current.formatPython !== false)
-						.description("Format Python writes with pinned Ruff."),
-					formatTypescriptJavascript: schemaTools
-						.boolean()
-						.default(current.formatTypescriptJavascript !== false)
-						.description(
-							"Format TypeScript and JavaScript writes with pinned Biome.",
-						),
-					formatRust: schemaTools
-						.boolean()
-						.default(current.formatRust === true)
-						.description(
-							"Opt-in: format Rust writes with the project's rustfmt.",
-						),
-					formatDockerCompose: schemaTools
-						.boolean()
-						.default(current.formatDockerCompose !== false)
-						.description("Format Compose writes with pinned Prettier."),
-					blockOnMissingFormatter: schemaTools
-						.boolean()
-						.default(current.blockOnMissingFormatter !== false)
-						.description(
-							"Block a write when its pinned formatter is not provisioned. Turn off to allow unformatted writes with a notice.",
-						),
-				})
-				.description("Pinned pre-write formatter routing."),
-			adapters: adapterSettingsSchema(schemaTools, current),
-			packs: packSettingsFields(schemaTools, current),
-		});
-		let source = () => ({
-			general: {
-				enabled: current.enabled !== false,
-				systemPromptAdvisory: current.systemPromptAdvisory !== false,
-				validatorTimeoutMs: positiveNumber(current.validatorTimeoutMs, 20_000),
-				aggregateMaxFindings: positiveNumber(current.aggregateMaxFindings, 15),
-				validatorFailOpen: current.validatorFailOpen !== false,
-				matchedTools: joinList(current.matchedTools),
-				ignoredPaths: joinList(current.ignoredPaths),
+function unwrapConfig(value) {
+	return value && typeof value.get === "function" ? value.get() : value;
+}
+
+/**
+ * Derives the effective enforcement policy from the resolved plugin config.
+ *
+ * Config owns every field the settings card edits; the current policy keeps
+ * packaged lists such as formatter pins that no form field touches.
+ *
+ * @param {Record<string, any>} config - Resolved volatile Config for this mount.
+ * @param {Record<string, unknown>} current - Policy the next values replace.
+ * @returns {Record<string, unknown>} Next effective policy object.
+ */
+export function policyFromConfig(config, current) {
+	const value = (key) => unwrapConfig(config?.[key]);
+	const languages = {};
+	for (const { key } of languageFields) languages[key] = value(key) !== false;
+	const adapters = Object.fromEntries(
+		adapterLanguages.map((language) => [
+			language,
+			{
+				command: String(value(`${language}HookCommand`) ?? ""),
+				args: String(value(`${language}HookArgs`) ?? ""),
+				cwd: String(value(`${language}HookCwd`) ?? ""),
+				timeoutMs:
+					Number(value(`${language}HookTimeoutMs`)) > 0
+						? Number(value(`${language}HookTimeoutMs`))
+						: 10_000,
 			},
-			languages: { ...current.languages },
-			formatting: {
-				formatOnWrite: current.formatOnWrite,
-				formatPython: current.formatPython,
-				formatTypescriptJavascript: current.formatTypescriptJavascript,
-				formatRust: current.formatRust,
-				formatDockerCompose: current.formatDockerCompose,
-				blockOnMissingFormatter: current.blockOnMissingFormatter,
-			},
-			adapters: Object.fromEntries(
+		]),
+	);
+	const { hookSettingsByLanguage, publicUnitAdapters } =
+		configuredHooks(adapters);
+	return {
+		...current,
+		enabled: value("enabled") !== false,
+		systemPromptAdvisory: value("systemPromptAdvisory") !== false,
+		validatorTimeoutMs: positiveNumber(value("validatorTimeoutMs"), 20_000),
+		aggregateMaxFindings: positiveNumber(value("aggregateMaxFindings"), 15),
+		validatorFailOpen: value("validatorFailOpen") !== false,
+		matchedTools: splitList(value("matchedTools")),
+		ignoredPaths: splitList(value("ignoredPaths")),
+		formatOnWrite: value("formatOnWrite") !== false,
+		formatPython: value("formatPython") !== false,
+		formatTypescriptJavascript: value("formatTypescriptJavascript") !== false,
+		formatRust: value("formatRust") === true,
+		formatDockerCompose: value("formatDockerCompose") !== false,
+		blockOnMissingFormatter: value("blockOnMissingFormatter") !== false,
+		hookSettings: hookSettingsByLanguage,
+		publicUnitAdapters,
+		publicUnitDocs: {
+			...Object.fromEntries(
 				adapterLanguages.map((language) => [
 					language,
-					hookSettings(current, language),
+					languages[language] === true &&
+						(!["rust", "cCpp"].includes(language) ||
+							Boolean(publicUnitAdapters[language])),
 				]),
 			),
-			packs: packSettingsSource(current),
-		});
-		settings.installSettingsSection(
-			ctx,
-			settings.settingsNamespace(name),
-			schema,
-			source(),
-			{
-				setSource: (next) => {
-					source = next;
-				},
-				onChange: async () => {
-					const value = source();
-					const general = value.general ?? {};
-					const languages = value.languages ?? {};
-					const formatting = value.formatting ?? {};
-					const { hookSettingsByLanguage, publicUnitAdapters } =
-						configuredHooks(value.adapters);
-					const next = {
-						...current,
-						enabled: general.enabled !== false,
-						systemPromptAdvisory: general.systemPromptAdvisory !== false,
-						validatorTimeoutMs: positiveNumber(
-							general.validatorTimeoutMs,
-							20_000,
-						),
-						aggregateMaxFindings: positiveNumber(
-							general.aggregateMaxFindings,
-							15,
-						),
-						validatorFailOpen: general.validatorFailOpen !== false,
-						matchedTools: splitList(general.matchedTools),
-						ignoredPaths: splitList(general.ignoredPaths),
-						formatOnWrite: formatting.formatOnWrite !== false,
-						formatPython: formatting.formatPython !== false,
-						formatTypescriptJavascript:
-							formatting.formatTypescriptJavascript !== false,
-						formatRust: formatting.formatRust === true,
-						formatDockerCompose: formatting.formatDockerCompose !== false,
-						blockOnMissingFormatter:
-							formatting.blockOnMissingFormatter !== false,
-						hookSettings: hookSettingsByLanguage,
-						publicUnitAdapters,
-						publicUnitDocs: {
-							...Object.fromEntries(
-								adapterLanguages.map((language) => [
-									language,
-									languages[language] === true &&
-										(!["rust", "cCpp"].includes(language) ||
-											Boolean(publicUnitAdapters[language])),
-								]),
-							),
-							typescriptJavascript: languages.typescriptJavascript === true,
-						},
-						languages: { ...current.languages, ...languages },
-						packProfiles: packSettingsApply(value.packs, current),
-					};
-					current = next;
-					await savePolicy(next);
-					await onPolicy?.(next);
-				},
-			},
-		);
-	} catch (error) {
-		ctx.logger?.warn?.(
-			`coding-doc-standard: settings unavailable: ${error.message}`,
-		);
-	}
+			typescriptJavascript: languages.typescriptJavascript === true,
+		},
+		languages: { ...current.languages, ...languages },
+		packProfiles: packSettingsApply(unwrapConfig(config?.packs), current),
+	};
+}
+
+/**
+ * Keeps the custom settings card as the only settings page for this plugin.
+ *
+ * The settings service is optional: a host without it simply never runs the
+ * callback, and the card is then absent rather than broken.
+ *
+ * @param {import('@deepseek-ai/cordis').Context} ctx - Cordis plugin context.
+ * @returns {void} Completion once the presentation policy is registered.
+ */
+function configureSettingsPresentation(ctx) {
+	ctx.inject(["settings"], (child) => {
+		try {
+			child.effect(() => child.settings.configure({ auto: false }, ctx.fiber));
+		} catch (error) {
+			ctx.logger?.warn?.(
+				`coding-doc-standard: settings presentation unavailable: ${error.message}`,
+			);
+		}
+	});
 }
 
 /**
@@ -1191,23 +1172,34 @@ function createSurfaces(ctx) {
 }
 
 /**
- * Mounts settings, every enforcement surface, and the asynchronous pre-write
- * policy listener driven by one live policy object.
+ * Mounts the config-driven policy, every enforcement surface, live setting
+ * updates, and the asynchronous pre-write policy listener.
  *
  * @param {import('@deepseek-ai/cordis').Context} ctx - Cordis plugin context.
+ * @param {Record<string, any>} [config] - Resolved plugin config from the Loader.
  * @returns {Promise<void>} Completion after every registration.
  */
-export async function apply(ctx) {
-	let policy = await loadPolicy();
+export async function apply(ctx, config) {
+	const base = await loadPolicy();
+	let policy = config ? policyFromConfig(config, base) : base;
 	await savePolicy(policy);
 	const surfaces = createSurfaces(ctx);
-	// Once before the settings section can exist, and again after every change,
-	// so the advisory, the commands, and the tools always match the switch.
+	// Once before anything can change, and again after every edit, so the
+	// advisory, the commands, and the tools always match the switch.
 	surfaces.sync(policy);
-	await installSettings(ctx, policy, async (next) => {
-		policy = next;
-		surfaces.sync(policy);
-	});
+	configureSettingsPresentation(ctx);
+	// Form edits commit into the volatile refs of this same mount, so the
+	// policy and every surface follow live without a restart.
+	if (config)
+		ctx.on("loader/volatile-update", () => {
+			policy = policyFromConfig(config, policy);
+			surfaces.sync(policy);
+			savePolicy(policy).catch((error) => {
+				ctx.logger?.warn?.(
+					`coding-doc-standard: policy persistence failed: ${error.message}`,
+				);
+			});
+		});
 	// The pre-execute pipeline is asynchronous, so formatters and the checker
 	// never stall the harness event loop the way a synchronous guard did.
 	ctx.on("tools/pre-execute", async (execution, next) => {

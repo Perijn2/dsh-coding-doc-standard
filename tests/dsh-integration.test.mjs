@@ -5,11 +5,13 @@
  *
  * @remarks
  * Usage:
- *   Core principle: Exercise the real Cordis context, settings installer, and
- *   native global guard instead of hand-wired stand-ins.
+ *   Core principle: Exercise the real Cordis context, the volatile Config
+ *   commit path, and the asynchronous pre-execute pipeline instead of
+ *   hand-wired stand-ins.
  *   Setup: Run with Node's built-in test runner from the package root.
- *   Workflow: Mount the host plugin, assert settings registration and durable
- *   persistence, then drive tool interception through the real bridge.
+ *   Workflow: Mount the host plugin over resolved config refs, assert the
+ *   settings presentation and durable persistence, then drive tool
+ *   interception through the real bridge.
  *   API guide: Tests cover settings change propagation and PreToolUse blocking.
  *   Worked example: npm test
  */
@@ -20,6 +22,7 @@ import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import test from "node:test";
 import { fileURLToPath, pathToFileURL } from "node:url";
+import { createVolatile, updateVolatile } from "@deepseek-ai/cosmokit";
 
 const root = join(dirname(fileURLToPath(import.meta.url)), "..");
 
@@ -28,7 +31,55 @@ const home = await mkdtemp(join(tmpdir(), "coding-doc-standard-home-"));
 process.env.USERPROFILE = home;
 process.env.HOME = home;
 
-const POLICY_KEYS = ["general", "languages", "formatting", "adapters", "packs"];
+// The flat contract the settings card edits: every resolved Config field is
+// one volatile ref at the top level of the served document.
+const GENERAL_KEYS = [
+	"enabled",
+	"systemPromptAdvisory",
+	"validatorTimeoutMs",
+	"aggregateMaxFindings",
+	"validatorFailOpen",
+	"matchedTools",
+	"ignoredPaths",
+];
+const LANGUAGE_KEYS = [
+	"python",
+	"typescriptJavascript",
+	"rust",
+	"cCpp",
+	"dockerCompose",
+	"go",
+	"csharp",
+	"java",
+	"kotlin",
+	"shell",
+	"php",
+	"ruby",
+	"swift",
+	"dart",
+	"haskell",
+	"lua",
+	"scala",
+];
+const FORMAT_KEYS = [
+	"formatOnWrite",
+	"formatPython",
+	"formatTypescriptJavascript",
+	"formatRust",
+	"formatDockerCompose",
+	"blockOnMissingFormatter",
+];
+const HOOK_SUFFIXES = ["HookCommand", "HookArgs", "HookCwd", "HookTimeoutMs"];
+const HOOK_KEYS = LANGUAGE_KEYS.filter(
+	(key) => !["python", "typescriptJavascript", "dockerCompose"].includes(key),
+).flatMap((language) => HOOK_SUFFIXES.map((suffix) => language + suffix));
+const CONFIG_KEYS = [
+	...GENERAL_KEYS,
+	...LANGUAGE_KEYS,
+	...FORMAT_KEYS,
+	...HOOK_KEYS,
+	"packs",
+];
 
 const COMPLIANT_TS = [
 	"/**",
@@ -71,40 +122,20 @@ def value():
 `;
 
 /**
- * Builds a settings service stub matching the dsh-settings consumer contract.
+ * Records settings presentation policies and answers with disposers.
  *
- * @returns {object} Stub with registrations, register, and change helpers.
+ * @returns {{presentations: object[], configure: (presentation: object) => () => void}} Settings service stub.
  */
 function createSettingsStub() {
-	const registrations = [];
-	let doc = {};
-	const watchers = new Set();
+	const presentations = [];
 	return {
-		registrations,
-		register(namespace, schema, options) {
-			doc = { ...options.base };
-			registrations.push({ namespace, schema, base: options.base });
-			return {
-				get: () => doc,
-				watch: (callback) => {
-					watchers.add(callback);
-					return () => watchers.delete(callback);
-				},
+		presentations,
+		configure(presentation) {
+			presentations.push(presentation);
+			return () => {
+				const index = presentations.indexOf(presentation);
+				if (index !== -1) presentations.splice(index, 1);
 			};
-		},
-		change(patch) {
-			const previous = doc;
-			// The real provider deep-merges the patch into the user section and
-			// resolves every unlisted field from the base layer, so emulate that
-			// instead of letting a nested patch drop its sibling fields.
-			doc = structuredClone(doc);
-			for (const [key, value] of Object.entries(patch)) {
-				doc[key] =
-					value && typeof value === "object" && !Array.isArray(value)
-						? { ...doc[key], ...value }
-						: value;
-			}
-			for (const callback of [...watchers]) callback(doc, previous);
 		},
 	};
 }
@@ -243,21 +274,33 @@ cordis.on("internal/listener", (eventName, listener) => {
 const hostModule = await import(
 	pathToFileURL(join(root, "src", "host", "index.mjs")).href
 );
-await cordis.plugin(hostModule);
+// Resolve the config the same way the Loader does, then hand the very refs to
+// apply, so applySettings below commits into the live mount, not a copy.
+const config = hostModule.Config["~standard"].validate({}).value;
+await cordis.plugin({
+	name: hostModule.name,
+	inject: hostModule.inject,
+	apply: (ctx) => hostModule.apply(ctx, config),
+});
 
 test.after(async () => {
 	await cordis.stop?.();
 	await rm(home, { recursive: true, force: true });
 });
 
-test("registers the coding-doc-standard settings namespace with the full schema", async () => {
-	const registration = await waitFor(
-		async () => settings.registrations[0] ?? null,
-		"settings registration",
+test("serves the coding-doc-standard settings document with the full schema", async () => {
+	await waitFor(
+		async () => settings.presentations.length > 0 || null,
+		"settings presentation",
 	);
-	assert.equal(registration.namespace, "coding-doc-standard");
-	const schemaKeys = Object.keys(registration.schema.dict ?? {});
-	assert.deepEqual(schemaKeys.sort(), [...POLICY_KEYS].sort());
+	assert.deepEqual(settings.presentations, [{ auto: false }]);
+	assert.deepEqual(Object.keys(config).sort(), [...CONFIG_KEYS].sort());
+	for (const key of CONFIG_KEYS)
+		assert.equal(
+			typeof config[key]?.get,
+			"function",
+			`volatile ref for ${key}`,
+		);
 });
 
 test("registers the workspace verifier as a DSH command", async () => {
@@ -349,9 +392,10 @@ test("runs the workspace verifier through the DSH command handler", async () => 
 test("persists the effective policy and follows settings changes", async () => {
 	const initial = await waitFor(readDurablePolicy, "durable policy file");
 	assert.equal(initial.formatOnWrite, true);
-	settings.change({
-		formatting: { formatOnWrite: false, formatPython: false },
-		languages: {
+	const updated = await applySettings(
+		{
+			formatOnWrite: false,
+			formatPython: false,
 			go: true,
 			shell: true,
 			php: true,
@@ -361,36 +405,29 @@ test("persists the effective policy and follows settings changes", async () => {
 			haskell: true,
 			lua: true,
 			scala: true,
+			scalaHookCommand: "scala-doc-adapter",
+			scalaHookArgs: '["--project","."]',
+			scalaHookCwd: "project",
+			scalaHookTimeoutMs: 12_000,
 		},
-		adapters: {
-			scala: {
-				command: "scala-doc-adapter",
-				args: '["--project","."]',
-				cwd: "project",
-				timeoutMs: 12_000,
-			},
+		(policy) => {
+			if (policy.formatOnWrite !== false) return false;
+			if (!policy.publicUnitDocs?.scala) return false;
+			if (policy.publicUnitAdapters?.scala?.command !== "scala-doc-adapter")
+				return false;
+			return Boolean(
+				policy.languages?.go &&
+					policy.languages?.shell &&
+					policy.languages?.php &&
+					policy.languages?.ruby &&
+					policy.languages?.swift &&
+					policy.languages?.dart &&
+					policy.languages?.haskell &&
+					policy.languages?.lua &&
+					policy.languages?.scala,
+			);
 		},
-	});
-	const updated = await waitFor(async () => {
-		const policy = await readDurablePolicy();
-		if (policy?.formatOnWrite !== false) return null;
-		if (!policy?.publicUnitDocs?.scala) return null;
-		if (policy?.publicUnitAdapters?.scala?.command !== "scala-doc-adapter")
-			return null;
-		if (
-			!policy.languages?.go ||
-			!policy.languages?.shell ||
-			!policy.languages?.php ||
-			!policy.languages?.ruby ||
-			!policy.languages?.swift ||
-			!policy.languages?.dart ||
-			!policy.languages?.haskell ||
-			!policy.languages?.lua ||
-			!policy.languages?.scala
-		)
-			return null;
-		return policy;
-	}, "durable policy update");
+	);
 	assert.equal(updated.formatPython, false);
 	assert.equal(updated.languages.go, true);
 	assert.equal(updated.languages.shell, true);
@@ -406,20 +443,24 @@ test("persists the effective policy and follows settings changes", async () => {
 });
 
 /**
- * Applies a settings patch and waits until the durable policy reflects it.
+ * Commits flat Config edits into the live refs and waits until the durable
+ * policy reflects them, exactly the way the Loader commits a volatile-only
+ * profile change.
  *
- * @param {Record<string, unknown>} patch - Settings fields to change.
+ * @param {Record<string, unknown>} values - Top-level Config fields to change.
  * @param {(policy: Record<string, any>) => boolean} settled - Predicate over the persisted policy.
  * @returns {Promise<Record<string, any>>} The settled policy.
  */
-async function applySettings(patch, settled) {
-	settings.change(patch);
+async function applySettings(values, settled) {
+	for (const [key, next] of Object.entries(values))
+		updateVolatile(config[key], createVolatile(next));
+	cordis.emit("loader/volatile-update", Object.keys(values));
 	return waitFor(
 		async () => {
 			const policy = await readDurablePolicy();
 			return policy && settled(policy) ? policy : null;
 		},
-		`policy after ${Object.keys(patch).join(", ")}`,
+		`policy after ${Object.keys(values).join(", ")}`,
 	);
 }
 
@@ -462,7 +503,7 @@ test("skips the gate for the write that write_formatted dispatches itself", asyn
 	};
 	try {
 		await applySettings(
-			{ formatting: { formatOnWrite: true, formatTypescriptJavascript: true } },
+			{ formatOnWrite: true, formatTypescriptJavascript: true },
 			(policy) =>
 				policy.formatOnWrite === true &&
 				policy.formatTypescriptJavascript === true &&
@@ -506,7 +547,7 @@ test("skips the gate for the write that write_formatted dispatches itself", asyn
 	} finally {
 		tools.onExecute = null;
 		await applySettings(
-			{ formatting: { formatOnWrite: false } },
+			{ formatOnWrite: false },
 			(policy) => policy.formatOnWrite === false,
 		);
 	}
@@ -527,7 +568,7 @@ test("advises the model through the system prompt by default", async () => {
 
 test("toggles the system-prompt advisory with its setting", async () => {
 	await applySettings(
-		{ general: { systemPromptAdvisory: false } },
+		{ systemPromptAdvisory: false },
 		(policy) => policy.systemPromptAdvisory === false,
 	);
 	await waitFor(
@@ -535,7 +576,7 @@ test("toggles the system-prompt advisory with its setting", async () => {
 		"advisory removal",
 	);
 	await applySettings(
-		{ general: { systemPromptAdvisory: true } },
+		{ systemPromptAdvisory: true },
 		(policy) => policy.systemPromptAdvisory === true,
 	);
 	await waitFor(
@@ -547,7 +588,7 @@ test("toggles the system-prompt advisory with its setting", async () => {
 test("aggregates every pass into one denial", async () => {
 	try {
 		await applySettings(
-			{ formatting: { formatOnWrite: true, formatTypescriptJavascript: true } },
+			{ formatOnWrite: true, formatTypescriptJavascript: true },
 			(policy) =>
 				policy.formatOnWrite === true &&
 				policy.formatTypescriptJavascript === true &&
@@ -569,7 +610,7 @@ test("aggregates every pass into one denial", async () => {
 		assert.match(reason, /\/coding-doc-verify/u);
 	} finally {
 		await applySettings(
-			{ formatting: { formatOnWrite: false } },
+			{ formatOnWrite: false },
 			(policy) => policy.formatOnWrite === false,
 		);
 	}
@@ -627,10 +668,7 @@ test("fails open with a visible notice when the budget is exhausted", async () =
 		// outlive it. The candidate itself is compliant, which keeps the only
 		// signal in the report the unfinished check.
 		await applySettings(
-			{
-				general: { validatorTimeoutMs: 1 },
-				languages: { python: true },
-			},
+			{ validatorTimeoutMs: 1, python: true },
 			(policy) =>
 				policy.validatorTimeoutMs === 1 && policy.languages?.python === true,
 		);
@@ -651,7 +689,7 @@ test("fails open with a visible notice when the budget is exhausted", async () =
 		assert.match(notice.content[0].text, /doc-standard/u);
 	} finally {
 		await applySettings(
-			{ general: { validatorTimeoutMs: 20_000 } },
+			{ validatorTimeoutMs: 20_000 },
 			(policy) => policy.validatorTimeoutMs === 20_000,
 		);
 	}
@@ -660,10 +698,7 @@ test("fails open with a visible notice when the budget is exhausted", async () =
 test("fails closed when validatorFailOpen is off", async () => {
 	try {
 		await applySettings(
-			{
-				general: { validatorTimeoutMs: 1, validatorFailOpen: false },
-				languages: { python: true },
-			},
+			{ validatorTimeoutMs: 1, validatorFailOpen: false, python: true },
 			(policy) =>
 				policy.validatorFailOpen === false &&
 				policy.validatorTimeoutMs === 1 &&
@@ -677,7 +712,7 @@ test("fails closed when validatorFailOpen is off", async () => {
 		assert.match(String(result.reason), /validatorFailOpen/u);
 	} finally {
 		await applySettings(
-			{ general: { validatorTimeoutMs: 20_000, validatorFailOpen: true } },
+			{ validatorTimeoutMs: 20_000, validatorFailOpen: true },
 			(policy) =>
 				policy.validatorFailOpen === true &&
 				policy.validatorTimeoutMs === 20_000,
@@ -688,7 +723,7 @@ test("fails closed when validatorFailOpen is off", async () => {
 test("honors a custom matchedTools list", async () => {
 	try {
 		await applySettings(
-			{ general: { matchedTools: "functions.write" } },
+			{ matchedTools: "functions.write" },
 			(policy) => policy.matchedTools?.[0] === "functions.write",
 		);
 		const untouched = await preExecute(hookAgent, "write", {
@@ -703,11 +738,7 @@ test("honors a custom matchedTools list", async () => {
 		assert.equal(guarded.kind, "deny");
 	} finally {
 		await applySettings(
-			{
-				general: {
-					matchedTools: "write, edit, functions.write, functions.edit",
-				},
-			},
+			{ matchedTools: "write, edit, functions.write, functions.edit" },
 			(policy) => (policy.matchedTools?.length ?? 0) === 4,
 		);
 	}
@@ -716,7 +747,7 @@ test("honors a custom matchedTools list", async () => {
 test("adds custom ignored paths on top of the built-in list", async () => {
 	try {
 		await applySettings(
-			{ general: { ignoredPaths: "src/scratch/**" } },
+			{ ignoredPaths: "src/scratch/**" },
 			(policy) => policy.ignoredPaths?.[0] === "src/scratch/**",
 		);
 		const scratch = await preExecute(hookAgent, "write", {
@@ -730,7 +761,7 @@ test("adds custom ignored paths on top of the built-in list", async () => {
 		});
 		assert.equal(vendored.kind, "allow");
 		await applySettings(
-			{ general: { ignoredPaths: "" } },
+			{ ignoredPaths: "" },
 			(policy) => (policy.ignoredPaths ?? ["x"]).length === 0,
 		);
 		const back = await preExecute(hookAgent, "write", {
@@ -740,7 +771,7 @@ test("adds custom ignored paths on top of the built-in list", async () => {
 		assert.equal(back.kind, "deny");
 	} finally {
 		await applySettings(
-			{ general: { ignoredPaths: "" } },
+			{ ignoredPaths: "" },
 			(policy) => (policy.ignoredPaths ?? ["x"]).length === 0,
 		);
 	}
