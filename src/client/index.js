@@ -408,6 +408,17 @@ window.__ModuleLoader__.load({
 		 * @returns {React.ReactElement | null} Settings content.
 		 */
 		function Settings({ scope }) {
+			if (!scope) {
+				return React.createElement(
+					"section",
+					{ className: "cds-settings-section" },
+					React.createElement(
+						"p",
+						null,
+						"Settings are unavailable in this host: the client settings service is not provided.",
+					),
+				);
+			}
 			const snapshot = React.useSyncExternalStore(
 				(listener) => scope.subscribe(listener),
 				() => scope.getSnapshot(),
@@ -509,9 +520,12 @@ window.__ModuleLoader__.load({
 		}
 
 		exports.name = NS;
-		exports.inject = ["slots", "settingsScope"];
+		// Only `slots` is a hard requirement: the settings form is resolved
+		// opportunistically so a host without the client settings service
+		// still boots and renders a fallback instead of staying pending.
+		exports.inject = ["slots"];
 		exports.apply = (ctx) => {
-			const scope = ctx.settingsScope.bind({ namespace: NS });
+			const scope = ctx.configForms?.get(NS);
 			ctx.effect(
 				() => registerSettingsNavIcon(),
 				`${NS}: settings navigation icon`,
