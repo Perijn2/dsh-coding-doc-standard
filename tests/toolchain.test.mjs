@@ -158,8 +158,8 @@ test("registers formatter controls in the dedicated settings navigation item", (
 	assert.ok(client.includes("cds-language-card"));
 	assert.ok(client.includes('"details"'));
 	assert.ok(!client.includes("\u00e2\u20ac\u201d"));
-	assert.ok(client.includes('ctx.slots.inject("settings.section"'));
-	assert.ok(client.includes('name: "settings.section"'));
+	assert.ok(client.includes('ctx.slots.inject("plugins.item"'));
+	assert.ok(client.includes('name: "plugins.item"'));
 	assert.ok(client.includes("id: NS"));
 	assert.ok(client.includes("(listener) => scope.subscribe(listener)"));
 	assert.ok(client.includes("() => scope.getSnapshot()"));

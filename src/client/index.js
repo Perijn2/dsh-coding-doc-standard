@@ -530,18 +530,29 @@ window.__ModuleLoader__.load({
 				() => registerSettingsNavIcon(),
 				`${NS}: settings navigation icon`,
 			);
-			ctx.slots.inject("settings.section", () =>
-				ctx.slots.register(
-					{
-						name: "settings.section",
-						id: NS,
-						order: 24,
-						label: () => SETTINGS_LABEL,
-						inject: () => ({ scope }),
-					},
-					Settings,
-				),
-			);
+			// Third-party plugin pages register into the Plugins page's
+			// `plugins.item` slot while the host serves this namespace.
+			const mount = () =>
+				ctx.slots.inject("plugins.item", () =>
+					ctx.slots.register(
+						{
+							name: "plugins.item",
+							id: NS,
+							order: 24,
+							label: () => SETTINGS_LABEL,
+							inject: () => ({ scope }),
+						},
+						Settings,
+					),
+				);
+			if (typeof ctx.configForms?.whileServed === "function") {
+				ctx.effect(
+					() => ctx.configForms.whileServed([NS], mount),
+					`${NS}: plugins.item registration`,
+				);
+			} else {
+				ctx.effect(mount, `${NS}: plugins.item registration`);
+			}
 		};
 		return module.exports;
 	},
