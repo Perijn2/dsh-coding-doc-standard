@@ -32,6 +32,7 @@ import {
 import { getRegistry } from "../engine/registry.mjs";
 import { runFormatterCommand } from "../formatter/command.mjs";
 import {
+	formatAndEdit,
 	formatAndWrite,
 	isSelfDispatch,
 	previewFormat,
@@ -277,7 +278,7 @@ function buildPackCatalog() {
 export const Config = z.object({
 	enabled: booleanField(
 		startupPolicy.enabled !== false,
-		"Master switch: when off, the write guard, both commands, and both write-through tools are retracted.",
+		"Master switch: when off, the write guard, both commands, and all three formatting tools are retracted.",
 	),
 	systemPromptAdvisory: booleanField(
 		startupPolicy.systemPromptAdvisory !== false,
@@ -588,7 +589,7 @@ export async function evaluatePendingWrite(
 	const elapsed = () => Date.now() - started;
 	if (!policy || policy.enabled === false)
 		return { action: "skip", elapsedMs: elapsed() };
-	// A write that write_formatted dispatched itself was already checked in
+	// A write that a formatted mutation dispatched itself was already checked in
 	// full before it reached the write tool, so validating it again would
 	// duplicate every finding and run the formatter a second time.
 	if (isSelfDispatch(execution?.parent))
@@ -610,10 +611,16 @@ export async function evaluatePendingWrite(
 		return { action: "skip", elapsedMs: elapsed() };
 	}
 	let built;
+	const cwd =
+		options.cwd ?? execution?.agent?.session?.header?.cwd ?? process.cwd();
 	try {
+		// The pre-edit text of an edit is read against the agent's workspace:
+		// tool paths are workspace-relative, and resolving them against the
+		// host process directory skipped every relative edit.
 		built = await run.buildCandidate(
 			{ tool_input: execution?.arguments ?? {} },
 			policy,
+			cwd,
 		);
 	} catch (error) {
 		options.logger?.warn?.(
@@ -627,9 +634,12 @@ export async function evaluatePendingWrite(
 	if (execution?.signal?.aborted)
 		return { action: "skip", path, elapsedMs: elapsed() };
 	const max = positiveNumber(policy.aggregateMaxFindings, 15);
+	// The execution's cancellation reaches every spawned checker and
+	// formatter: an aborted turn must not leave its children running.
 	const result = await run.validateCandidate(built.candidate, policy, {
 		timeoutMs: positiveNumber(policy.validatorTimeoutMs, 20_000),
-		cwd: options.cwd ?? execution?.agent?.session?.header?.cwd ?? process.cwd(),
+		cwd,
+		signal: execution?.signal,
 	});
 	if (execution?.signal?.aborted)
 		return { action: "skip", path, elapsedMs: elapsed() };
@@ -721,10 +731,10 @@ function advisoryText(policy) {
 	const lines = [
 		"coding-doc-standard enforces this workspace's documentation and formatter policy on every write and edit before the change lands.",
 		"",
-		"- Read the rules before writing: skill coding-doc-standard, then the reference file for the language you are editing. Guessing the header format is the usual cause of a denial.",
+		"- Read the rules before writing: skill coding-doc-standard, then the language-pack skill of the file you are editing (for example coding-doc-standard-python). Guessing the header format is the usual cause of a denial.",
 		"- Put the required file header and the documentation of every public unit in the same draft as the code, not in a follow-up edit.",
-		"- Call write_formatted with the intended file_path, the complete content, and the language you are writing: it formats, checks, and writes in one step.",
-		"- language is required and must match file_path; a mismatch, a Rust path, and a path with no managed formatter are refused rather than guessed at.",
+		"- Prefer edit_formatted for literal replacements in existing source files; use write_formatted for complete file writes. Both format, check, and write in one step.",
+		"- language is required and must match file_path; a mismatch and a path with no pack-declared formatter are refused rather than guessed at. Rust (.rs) routes through the project toolchain's rustfmt when formatRust is on.",
 		"- format_code runs the same check and never writes, so use it to read the formatted text before you land it.",
 		"- A denial lists every finding for that file at once, with the rule reference that fixes them. Fix them all, then retry once.",
 		"- Vendored, generated, minified, and lockfile paths are never blocked.",
@@ -930,7 +940,7 @@ function runVerification(args, cwd, signal) {
 }
 
 /**
- * Declares the receipt shared by both write-through tools.
+ * Declares the receipt shared by all three formatting tools.
  *
  * One schema keeps the dry run and the applied write telling the same story.
  * `formatted_content` stays optional because an applied write already put
@@ -1019,7 +1029,7 @@ function registerFormatCode(ctx, livePolicy) {
 		defineTool({
 			name: "format_code",
 			description:
-				"Preview one file through the pinned managed formatter and the documentation check without writing anything. The formatted text comes back here; write_formatted is the only tool that lands a change.",
+				"Preview one file through the pinned managed formatter and the documentation check without writing anything. The formatted text comes back here; edit_formatted and write_formatted land changes.",
 			parameters: {
 				file_path: {
 					type: "string",
@@ -1035,9 +1045,15 @@ function registerFormatCode(ctx, livePolicy) {
 				language: {
 					type: "string",
 					required: true,
-					enum: ["python", "typescript", "javascript", "docker-compose"],
+					enum: [
+						"python",
+						"typescript",
+						"javascript",
+						"docker-compose",
+						"rust",
+					],
 					description:
-						"Required, and it must match file_path: python for .py, typescript for .ts/.tsx/.mts/.cts, javascript for .js/.jsx/.mjs/.cjs, docker-compose for a compose file. A contradiction is refused instead of formatting the bytes with the wrong parser. Rust is excluded because its formatter is the project toolchain rather than a managed executable.",
+						"Required, and it must match file_path: python for .py, typescript for .ts/.tsx/.mts/.cts, javascript for .js/.jsx/.mjs/.cjs, docker-compose for a compose file, rust for .rs. A contradiction is refused instead of formatting the bytes with the wrong parser. Rust formats through the project toolchain's rustfmt via the Rust pack's formatter declaration when formatRust is on.",
 				},
 				formatter_args: {
 					type: "array",
@@ -1067,36 +1083,65 @@ function registerFormatCode(ctx, livePolicy) {
 }
 
 /**
- * Registers the write-through tool that lands one formatted, checked file.
+ * Register a write-through tool that lands one formatted, checked file.
  *
- * @param {import('@deepseek-ai/cordis').Context} ctx - Cordis plugin context.
- * @param {() => Record<string, unknown>} livePolicy - Reader for the current policy.
+ * @param {import('@deepseek-ai/cordis').Context} ctx (in) - Cordis plugin context.
+ * @param {() => Record<string, unknown>} livePolicy (in) - Reader for the current policy.
+ * @param {boolean} [edits] (in) - Register literal replacements instead of complete writes; defaults to false.
  * @returns {() => void} Disposer that unregisters the tool.
  */
-function registerWriteFormatted(ctx, livePolicy) {
+function registerWriteFormatted(ctx, livePolicy, edits = false) {
 	return ctx.tools.register(
 		defineTool({
-			name: "write_formatted",
-			description:
-				"Format one complete file, check the formatted text against this workspace standard, and write it in a single call. This is the normal way to land code here: the findings refer to the formatted lines that actually land.",
+			name: edits ? "edit_formatted" : "write_formatted",
+			description: edits
+				? "Apply literal replacements to an existing file, format the complete result, check it against this workspace standard, and write it in a single call. Prefer this for existing source edits."
+				: "Format one complete file, check the formatted text against this workspace standard, and write it in a single call. Use this for complete file writes; findings refer to the formatted lines that actually land.",
 			parameters: {
 				file_path: {
 					type: "string",
 					required: true,
-					description:
-						"Intended workspace path. It selects the formatter and the configuration, and the file itself need not exist yet.",
+					description: edits
+						? "Existing workspace file to edit. It selects the formatter and configuration."
+						: "Intended workspace path. It selects the formatter and the configuration, and the file itself need not exist yet.",
 				},
-				content: {
-					type: "string",
-					required: true,
-					description: "Complete file text, header and docs included.",
-				},
+				...(edits
+					? {
+							old_string: {
+								type: "string",
+								required: true,
+								description: "Non-empty literal text to replace.",
+							},
+							new_string: {
+								type: "string",
+								required: true,
+								description: "Replacement text; empty deletes.",
+							},
+							replace_all: {
+								type: "boolean",
+								description:
+									"Replace all matches; false (default) requires exactly one match.",
+							},
+						}
+					: {
+							content: {
+								type: "string",
+								required: true,
+								description: "Complete file text, header and docs included.",
+							},
+						}),
 				language: {
 					type: "string",
 					required: true,
-					enum: ["python", "typescript", "javascript", "docker-compose"],
+					enum: [
+						"python",
+						"typescript",
+						"javascript",
+						"docker-compose",
+						"rust",
+					],
 					description:
-						"Required, and it must match file_path: python for .py, typescript for .ts/.tsx/.mts/.cts, javascript for .js/.jsx/.mjs/.cjs, docker-compose for a compose file. A contradiction is refused instead of formatting the bytes with the wrong parser.",
+						"Required, and it must match file_path: python for .py, typescript for .ts/.tsx/.mts/.cts, javascript for .js/.jsx/.mjs/.cjs, docker-compose for a compose file, rust for .rs. A contradiction is refused instead of formatting the bytes with the wrong parser. Rust formats through the project toolchain's rustfmt via the Rust pack's formatter declaration when formatRust is on.",
 				},
 				formatter_args: {
 					type: "array",
@@ -1107,11 +1152,18 @@ function registerWriteFormatted(ctx, livePolicy) {
 				schema: receiptSchema(),
 				render: (_args, value) => renderReceipt(value),
 			},
-			isConcurrencySafe: () => true,
+			isConcurrencySafe: () => !edits,
 			async execute(args, exec) {
-				return formatAndWrite({
+				const apply = edits ? formatAndEdit : formatAndWrite;
+				return apply({
 					filePath: args.file_path,
-					content: args.content,
+					...(edits
+						? {
+								oldString: args.old_string,
+								newString: args.new_string,
+								replaceAll: args.replace_all ?? false,
+							}
+						: { content: args.content }),
 					language: args.language,
 					formatterArgs: args.formatter_args ?? [],
 					exec,
@@ -1129,11 +1181,11 @@ function registerWriteFormatted(ctx, livePolicy) {
  * Owns every surface the plugin adds to the host, so one setting retracts all
  * of them together.
  *
- * The advisory, both commands, and both write-through tools are enforcement
+ * The advisory, both commands, and all three formatting tools are enforcement
  * surfaces rather than decoration. A master switch that only stopped the deny
- * gate would still tell the model to route every edit through
- * `write_formatted`, which keeps reformatting files the user believes are
- * untouched. Both registries return an effect disposer, so `sync` mounts on the
+ * gate would still route edits through formatted mutation tools, reformatting
+ * files the user believes are untouched. Both registries return an effect
+ * disposer, so `sync` mounts on the
  * transition to enabled, retracts on the transition to disabled, and leaves an
  * unchanged master switch alone so ordinary policy edits never churn a
  * registration.
@@ -1217,6 +1269,7 @@ function createSurfaces(ctx) {
 			disposers.push(
 				registerFormatCode(ctx, livePolicy),
 				registerWriteFormatted(ctx, livePolicy),
+				registerWriteFormatted(ctx, livePolicy, true),
 			);
 			mounted = true;
 		},
@@ -1252,8 +1305,11 @@ export async function apply(ctx, config) {
 				);
 			});
 		});
-	// The pre-execute pipeline is asynchronous, so formatters and the checker
-	// never stall the harness event loop the way a synchronous guard did.
+	// The redesigned pre-execute gate is always registered: the master switch
+	// short-circuits inside the handler, so toggling enforcement never has to
+	// churn a host registration. The pipeline is asynchronous, and every
+	// child it spawns dies with the validation budget or the execution's own
+	// cancellation, so a hung formatter cannot outlive the write it checked.
 	ctx.on("tools/pre-execute", async (execution, next) => {
 		const decision = await evaluatePendingWrite(execution, policy, {
 			logger: ctx.logger,

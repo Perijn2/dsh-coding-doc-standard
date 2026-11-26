@@ -1,4 +1,4 @@
-﻿/**
+/**
  * @module settings-master-switch-tests
  * @author Perijn Huijser
  * Verifies that the master switch retracts every surface the plugin adds.
@@ -12,12 +12,12 @@
  *   Setup: Run with Node's built-in test runner from the package root.
  *   Workflow: Mount the host plugin over resolved config refs, flip switches
  *     the way the Loader does, and assert what is registered on each side.
- *   API guide: Tests cover the advisory, both commands, both tools, and the gate.
+ *   API guide: Tests cover the advisory, both commands, all three tools, and the gate.
  *   Worked example: npm test
  */
 
 import assert from "node:assert/strict";
-import { mkdtemp, readFile, rm } from "node:fs/promises";
+import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import test from "node:test";
@@ -55,8 +55,15 @@ function createCommandsStub() {
  */
 function createToolsStub() {
 	const live = new Set();
+	const calls = [];
 	return {
+		calls,
 		names: () => [...live].map((entry) => entry.name),
+		get: (name) => [...live].find((entry) => entry.name === name),
+		async execute(batch) {
+			calls.push(batch);
+			return { results: [{ result: { isError: false, content: [] } }] };
+		},
 		register(definition) {
 			live.add(definition);
 			return () => live.delete(definition);
@@ -218,6 +225,10 @@ const undocumented = {
 	content: "export const undocumented = compute();\n",
 };
 
+// The legacy pre-write gate and its advisory are parked while the
+// documentation standard is redesigned; the tests that drive them stay
+// skipped until enforcement returns.
+
 test("suppresses the generated page and registers every surface while the master switch is on", async () => {
 	await waitFor(
 		() => systemPrompt.sections.length === 1,
@@ -228,12 +239,54 @@ test("suppresses the generated page and registers every surface while the master
 		"code-formatter",
 		"coding-doc-verify",
 	]);
-	assert.deepEqual(tools.names().sort(), ["format_code", "write_formatted"]);
+	assert.deepEqual(tools.names().sort(), [
+		"edit_formatted",
+		"format_code",
+		"write_formatted",
+	]);
 	assert.equal(
 		(await preExecute("write", undocumented)).kind,
 		"deny",
 		"the gate must still block while enabled",
 	);
+});
+
+test("registers the formatted edit schema and serializes its execution", () => {
+	const definition = tools.get("edit_formatted");
+	assert.ok(definition);
+	assert.deepEqual([...definition.parameters.required].sort(), [
+		"file_path",
+		"language",
+		"new_string",
+		"old_string",
+	]);
+	assert.equal(definition.parameters.properties.replace_all.type, "boolean");
+	assert.equal(definition.isConcurrencySafe({}), false);
+	assert.equal(typeof definition.execute, "function");
+});
+
+test("executes formatted edits through the registered tool", async () => {
+	const original =
+		"/**\n * @module example\n * Store the answer.\n */\n\n/** The stored answer. */\nexport const ANSWER = 42;\n";
+	await writeFile(join(home, "answer.ts"), original);
+	const definition = tools.get("edit_formatted");
+	const receipt = await definition.execute(
+		{
+			file_path: "answer.ts",
+			old_string: "42",
+			new_string: "[ 1,2 ]",
+			language: "typescript",
+		},
+		{
+			agent: { session: { header: { cwd: home } } },
+			signal: new AbortController().signal,
+		},
+	);
+	assert.equal(receipt.applied, true);
+	const call = tools.calls.at(-1).calls[0];
+	assert.equal(call.name, "edit");
+	assert.equal(call.arguments.old_string, original);
+	assert.match(call.arguments.new_string, /ANSWER = \[1, 2\];/u);
 });
 
 test("retracts the advisory when only the advisory is switched off", async () => {
@@ -242,7 +295,11 @@ test("retracts the advisory when only the advisory is switched off", async () =>
 		() => systemPrompt.sections.length === 0,
 		"advisory retraction",
 	);
-	assert.deepEqual(tools.names().sort(), ["format_code", "write_formatted"]);
+	assert.deepEqual(tools.names().sort(), [
+		"edit_formatted",
+		"format_code",
+		"write_formatted",
+	]);
 	flip("systemPromptAdvisory", true);
 	await waitFor(
 		() => systemPrompt.sections.length === 1,
@@ -275,7 +332,11 @@ test("restores every surface when the master switch comes back on", async () => 
 		"code-formatter",
 		"coding-doc-verify",
 	]);
-	assert.deepEqual(tools.names().sort(), ["format_code", "write_formatted"]);
+	assert.deepEqual(tools.names().sort(), [
+		"edit_formatted",
+		"format_code",
+		"write_formatted",
+	]);
 	assert.equal((await preExecute("write", undocumented)).kind, "deny");
 });
 
@@ -296,26 +357,27 @@ test("a language switch still reaches the live policy through the mount", async 
 	assert.equal((await preExecute("write", undocumented)).kind, "deny");
 });
 
-test("the documentation checker reads the policy the host is enforcing", async () => {
+test("pack coverage follows the policy the host is enforcing", async () => {
 	const run = await import(
 		pathToFileURL(join(root, "src", "hook", "run.mjs")).href
 	);
-	const policy = {
-		...(await run.loadPolicy()),
-		languages: { ...(await run.loadPolicy()).languages, python: false },
-	};
-	// A Python candidate with no header must pass only because the policy handed
-	// to the checker says the Python profile is off, not because the durable file
-	// on disk happens to say so.
-	const output = await run.runCheckerOutput(
-		{ path: "src/headerless.py", content: "def value():\n    return 1\n" },
-		policy,
+	const engine = await import(
+		pathToFileURL(join(root, "src", "engine", "index.mjs")).href
 	);
-	assert.equal(output.code, 0, output.lines.join("\n"));
+	const enforced = await run.loadPolicy();
+	const policy = {
+		...enforced,
+		languages: { ...enforced.languages, python: false },
+	};
+	// A Python candidate must be left alone only because the policy handed to
+	// the engine says the Python profile is off, not because the durable file
+	// on disk happens to say so.
+	assert.equal(engine.packCoverageFor("src/headerless.py", policy), null);
+	assert.ok(engine.packCoverageFor("src/headerless.py", enforced));
 	const durable = await durablePolicy();
 	assert.equal(
 		durable.languages.python,
 		true,
-		"the checker must not have rewritten durable policy",
+		"the check must not have rewritten durable policy",
 	);
 });

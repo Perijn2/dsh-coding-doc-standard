@@ -106,22 +106,6 @@ const COMPLIANT_TS = [
 
 const UNDOCUMENTED_TS = "export const undocumented = compute();\n";
 
-const COMPLIANT_PY = `"""Author: Perijn Huijser
-Summary: Demonstrates a documented Python module.
-
-Usage:
-    Core principle: Keep behavior explicit.
-    Setup: Import the module.
-    Workflow: Call value.
-    API guide: value returns a stable integer.
-    Worked example: value()
-"""
-
-def value():
-    """Return a stable integer."""
-    return 1
-`;
-
 /**
  * Records settings presentation policies and answers with disposers.
  *
@@ -185,7 +169,19 @@ function createToolsStub() {
 		async execute(input) {
 			calls.push(input);
 			await stub.onExecute?.(input);
-			return { isError: false, content: [{ type: "text", text: "written" }] };
+			return {
+				results: [
+					{
+						callId: input.calls[0].id,
+						result: {
+							isError: false,
+							content: [{ type: "text", text: "written" }],
+						},
+					},
+				],
+				additionalContexts: [],
+				concluded: false,
+			};
 		},
 	};
 	return stub;
@@ -308,13 +304,27 @@ test("serves the registry-driven pack catalog to the settings page", async () =>
 	const catalog = JSON.parse(config.packCatalog.get());
 	const byId = new Map(catalog.packs.map((pack) => [pack.id, pack]));
 	assert.deepEqual([...byId.keys()].sort(), [
+		"c",
+		"cpp",
+		"csharp",
+		"dart",
 		"docker-compose",
+		"go",
+		"haskell",
+		"java",
+		"kotlin",
 		"lua",
+		"php",
 		"python",
+		"ruby",
+		"rust",
+		"scala",
+		"shell",
+		"swift",
 		"typescript-javascript",
 	]);
-	// The Lua pilot owns its documentation, so its toggles write the packs
-	// field; formatter-only packs still write the legacy rule field.
+	// Only formatter-only packs address the legacy policy field; every pack
+	// that discovers units owns its documentation through the packs field.
 	assert.equal(byId.get("lua").legacyDocsKey, null);
 	const py = byId.get("python").legacyDocsKey;
 	assert.equal(py, "python");
@@ -323,9 +333,9 @@ test("serves the registry-driven pack catalog to the settings page", async () =>
 	const compose = byId.get("docker-compose").legacyDocsKey;
 	assert.equal(compose, "dockerCompose");
 	for (const pack of catalog.packs) {
-		assert.ok(pack.label, pack.id + " label");
+		assert.ok(pack.label, `${pack.id} label`);
 		for (const profile of pack.profiles) {
-			assert.ok(profile.languageVersions, pack.id + " version range");
+			assert.ok(profile.languageVersions, `${pack.id} version range`);
 		}
 	}
 	assert.deepEqual(catalog.stale, []);
@@ -401,6 +411,7 @@ test("registers and executes the format_code agent tool", async () => {
 		"typescript",
 		"javascript",
 		"docker-compose",
+		"rust",
 	]);
 });
 
@@ -631,10 +642,13 @@ test("aggregates every pass into one denial", async () => {
 		assert.match(reason, /\[doc-standard\]/u);
 		assert.match(reason, /issue\(s\) block writing src\/messy\.ts/u);
 		assert.match(reason, /\[public units\]/u);
-		assert.match(reason, /\[documentation\]/u);
+		assert.match(reason, /\[packs\]/u);
 		assert.match(reason, /\[formatting\]/u);
 		assert.match(reason, /Formatting: call write_formatted/u);
-		assert.match(reason, /references\/typescript-javascript\.md/u);
+		assert.match(
+			reason,
+			/coding-doc-standard-typescript-javascript pack skill/u,
+		);
 		assert.match(reason, /\/coding-doc-verify/u);
 	} finally {
 		await applySettings(
@@ -692,18 +706,26 @@ test("allows a candidate that cannot be materialized", async () => {
 test("fails open with a visible notice when the budget is exhausted", async () => {
 	const notices = [];
 	try {
-		// The Python checker spawns an interpreter, so a 1 ms budget cannot
-		// outlive it. The candidate itself is compliant, which keeps the only
-		// signal in the report the unfinished check.
+		// The TypeScript pack formats through a Biome subprocess, so a 1 ms
+		// budget cannot outlive it. The candidate itself is compliant, which
+		// keeps the only signal in the report the unfinished check.
 		await applySettings(
-			{ validatorTimeoutMs: 1, python: true },
+			{
+				validatorTimeoutMs: 1,
+				typescriptJavascript: true,
+				formatOnWrite: true,
+				formatTypescriptJavascript: true,
+			},
 			(policy) =>
-				policy.validatorTimeoutMs === 1 && policy.languages?.python === true,
+				policy.validatorTimeoutMs === 1 &&
+				policy.languages?.typescriptJavascript === true &&
+				policy.formatOnWrite === true &&
+				policy.formatTypescriptJavascript === true,
 		);
 		const result = await preExecute(
 			hookAgent,
 			"write",
-			{ file_path: "src/slow_but_compliant.py", content: COMPLIANT_PY },
+			{ file_path: "src/slow_but_compliant.ts", content: COMPLIANT_TS },
 			{ deferContext: (message) => notices.push(message) },
 		);
 		assert.equal(result.kind, "allow", JSON.stringify(result));
@@ -726,15 +748,23 @@ test("fails open with a visible notice when the budget is exhausted", async () =
 test("fails closed when validatorFailOpen is off", async () => {
 	try {
 		await applySettings(
-			{ validatorTimeoutMs: 1, validatorFailOpen: false, python: true },
+			{
+				validatorTimeoutMs: 1,
+				validatorFailOpen: false,
+				typescriptJavascript: true,
+				formatOnWrite: true,
+				formatTypescriptJavascript: true,
+			},
 			(policy) =>
 				policy.validatorFailOpen === false &&
 				policy.validatorTimeoutMs === 1 &&
-				policy.languages?.python === true,
+				policy.languages?.typescriptJavascript === true &&
+				policy.formatOnWrite === true &&
+				policy.formatTypescriptJavascript === true,
 		);
 		const result = await preExecute(hookAgent, "write", {
-			file_path: "src/slow_but_compliant.py",
-			content: COMPLIANT_PY,
+			file_path: "src/slow_but_compliant.ts",
+			content: COMPLIANT_TS,
 		});
 		assert.equal(result.kind, "deny", JSON.stringify(result));
 		assert.match(String(result.reason), /validatorFailOpen/u);
@@ -833,6 +863,7 @@ test("enforces the opt-in PHP header through the pre-execute policy", async () =
 		content: `<?php
 /**
  * @author Perijn Huijser
+ * Summary: Demonstrates an opt-in PHP source header.
  * Usage: Demonstrates an opt-in PHP source header.
  */
 

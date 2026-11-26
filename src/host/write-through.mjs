@@ -9,14 +9,15 @@
  *   Core principle: One call covers formatting, the documentation check, and
  *   the write, so authoring cannot fan out into four calls that each reveal
  *   one class of problem.
- *   Setup: Reached through the `write_formatted` and `format_code` tools that
+ *   Setup: Reached through the formatted mutation and preview tools that
  *   `src/host/index.mjs` registers; this module is not an entry point.
  *   Workflow: Take the language the caller declared, refuse the request when
  *   the path contradicts it, format in memory, validate the formatted bytes
- *   against the live policy, then dispatch the inner write while this module
+ *   against the live policy, then dispatch the inner mutation while this module
  *   holds the enclosing execution token so the pre-execute gate skips a
  *   candidate it has already checked.
- *   API guide: `formatAndWrite` lands one file; `previewFormat` runs the
+ *   API guide: `formatAndWrite` lands one file; `formatAndEdit` edits an existing
+ *   file through a snapshot-checked native edit; `previewFormat` runs the
  *   same cycle and returns the text without writing; `isSelfDispatch` tells
  *   the gate whether one pending execution came from here; `languageForPath`
  *   reports what the live policy would format here; `languageOfExtension`
@@ -29,7 +30,9 @@
  */
 
 import { randomUUID } from "node:crypto";
-import { extname } from "node:path";
+import { readFile } from "node:fs/promises";
+import { extname, resolve } from "node:path";
+import { formatWithDeclaredFormatter } from "../engine/formatters.mjs";
 import { runFormatterCommand } from "../formatter/command.mjs";
 
 /**
@@ -61,7 +64,15 @@ const FORMATTER_BY_LANGUAGE = {
 	typescript: "biome",
 	javascript: "biome",
 	"docker-compose": "prettier",
+	rust: "rustfmt",
 };
+
+/**
+ * Declared language keys that have no managed selector and instead route
+ * through the pack-declared formatter (captured stdout), for example the
+ * Rust pack's project-toolchain rustfmt.
+ */
+const PACK_ROUTED_LANGUAGES = ["rust"];
 
 /**
  * Extensions that are TypeScript by extension alone.
@@ -170,10 +181,10 @@ export function languageOfExtension(filePath, run, policy = {}) {
 /**
  * Resolves the language the live policy will actually format here.
  *
- * The lookup delegates to the gate own profile rule so the tool can never
- * disagree with what a plain `write` would be held to. Rust is absent: its
- * formatter is the project toolchain rather than a managed executable this
- * plugin may invoke.
+ * The lookup delegates to the gate's own profile rule so the tool can never
+ * disagree with what a plain `write` would be held to. A pack-declared
+ * formatter (the Rust pack's project-toolchain rustfmt) counts exactly like a
+ * managed one, gated by its settings key.
  *
  * @param {string} filePath - Target path supplied by the caller.
  * @param {typeof import("../hook/run.mjs")} run - Validator module namespace.
@@ -181,11 +192,10 @@ export function languageOfExtension(filePath, run, policy = {}) {
  * @returns {string | null} Tool language key, or null when nothing formats here.
  */
 export function languageForPath(filePath, run, policy) {
-	const language = keyForProfile(
+	return keyForProfile(
 		run.formatterProfile(filePath, { ...policy, formatOnWrite: true }),
 		extensionOf(filePath),
 	);
-	return language === "rust" ? null : language;
 }
 
 /**
@@ -229,35 +239,35 @@ function fenced(text) {
 }
 
 /**
- * Lists the language keys the two write-through tools accept.
+ * Lists the language keys the write-through tools accept.
  *
  * @returns {string} Comma-separated language keys.
  */
 function supportedLanguages() {
-	return Object.keys(SELECTORS).join(", ");
+	return [...Object.keys(SELECTORS), ...PACK_ROUTED_LANGUAGES].join(", ");
 }
 
 /**
  * Points one refusal at the skill text that carries the rule behind it.
  *
  * A refusal that only says no leaves the agent guessing, which is the
- * failure this plugin exists to remove, so every refusal names the skill
- * reference that documents the standard for that path.
+ * failure this plugin exists to remove, so every refusal names the
+ * language-pack skill that documents the standard for that path.
  *
  * @param {typeof import("../hook/run.mjs")} run - Validator module namespace.
  * @param {string} filePath - Path the refusal is about.
  * @param {Record<string, unknown>} policy - Policy supplying compose patterns.
- * @returns {string} Sentence naming the reference file when one applies.
+ * @returns {string} Sentence naming the pack skill when one applies.
  */
 function skillPointer(run, filePath, policy) {
-	const reference =
-		typeof run?.referenceForPath === "function"
-			? run.referenceForPath(filePath, policy)
+	const skill =
+		typeof run?.skillForPath === "function"
+			? run.skillForPath(filePath, policy)
 			: null;
-	if (!reference) return "Load the coding-doc-standard skill before retrying.";
+	if (!skill) return "Load the coding-doc-standard skill before retrying.";
 	return (
-		"Load the coding-doc-standard skill and read " +
-		`skill/references/${reference} before retrying.`
+		"Load the coding-doc-standard skill and its " +
+		`${skill} pack skill before retrying.`
 	);
 }
 
@@ -326,7 +336,7 @@ async function assessCandidate(candidate, { run, policy, cwd, enforcing }) {
  * @param {object} context - What formatting did to this candidate.
  * @param {string} context.formatted - Text the formatter produced.
  * @param {boolean} context.changed - Whether the formatter changed the text.
- * @param {boolean} context.hasFormatter - Whether a managed formatter ran at all.
+ * @param {boolean} context.hasFormatter - Whether any formatter ran (managed or pack-declared).
  * @param {string} context.language - Language key the request declared.
  * @returns {string} Multi-line blocking report ending with the next step.
  */
@@ -440,27 +450,7 @@ function mismatchReport(filePath, own, declared, run, policy) {
 }
 
 /**
- * Refuses a Rust path, which this plugin deliberately does not format.
- *
- * @param {string} filePath - Rust path the request pointed at.
- * @param {string} declared - Language the caller declared.
- * @param {typeof import("../hook/run.mjs")} run - Validator module namespace.
- * @param {Record<string, unknown>} policy - Policy supplying compose patterns.
- * @returns {string} Refusal text naming the project-toolchain rule.
- */
-function rustReport(filePath, declared, run, policy) {
-	return [
-		`${PREFIX}${filePath} is Rust, which this plugin does not format.`,
-		"rustfmt belongs to the project toolchain, so it is not offered as a " +
-			`managed formatter here, and declaring "${declared}" cannot change ` +
-			"that.",
-		"Use the plain write tool for this file and run cargo fmt yourself.",
-		skillPointer(run, filePath, policy),
-	].join("\n");
-}
-
-/**
- * Refuses a path no managed formatter is wired up for.
+ * Refuses a path no pack-declared or managed formatter is wired up for.
  *
  * @param {string} filePath - Path outside every formatter mapping.
  * @param {string} declared - Language the caller declared.
@@ -504,14 +494,16 @@ function noFormatterPreviewReport(filePath, declared, run, policy) {
 }
 
 /**
- * Picks the write tool name this host actually registers.
+ * Pick the mutation tool name this host actually registers.
  *
- * @param {{get?: (name: string, scope?: unknown) => unknown}} tools - Tool runtime.
- * @param {unknown} agent - Calling agent, tried first as the scope key.
- * @returns {string} Registered write tool name, defaulting to `write`.
+ * @param {{get?: (name: string, scope?: unknown) => unknown}} tools (in) - Tool runtime.
+ * @param {unknown} agent (in) - Calling agent, tried first as the scope key.
+ * @param {string} toolName (in) - Native mutation name, either write or edit.
+ *
+ * @returns {string} Registered bare or functions-prefixed tool name, defaulting to the bare name.
  */
-function resolveWriteToolName(tools, agent) {
-	const candidates = ["write", "functions.write"];
+function resolveMutationToolName(tools, agent, toolName) {
+	const candidates = [toolName, `functions.${toolName}`];
 	if (typeof tools?.get !== "function") return candidates[0];
 	for (const scope of [agent, undefined]) {
 		for (const candidate of candidates) {
@@ -538,41 +530,75 @@ function mintCallId(parentCallId, toolName) {
 }
 
 /**
- * Dispatches the inner write and keeps the self-dispatch token for its lifetime.
+ * Dispatch the inner mutation and keep its self-dispatch token until settled.
  *
- * @param {object} options - Dispatch inputs.
- * @param {string} options.filePath - Path handed to the write tool.
- * @param {string} options.content - Formatted content handed to the write tool.
- * @param {{callId?: string, rootCallId?: string, token?: unknown, agent?: unknown, signal?: AbortSignal}} options.exec - Enclosing tool execution.
- * @param {{execute?: (input: object) => Promise<any>}} options.tools - Tool runtime.
+ * The dispatch uses the harness batch contract: one `calls` array of raw
+ * `{id, name, arguments}` blocks answered by `{results: [{callId, result}]}`.
+ * Supplying before selects a native edit against that full-file snapshot;
+ * otherwise dispatch the existing whole-file write.
+ *
+ * @param {object} options (in) - Dispatch inputs.
+ * @param {string} options.filePath (in) - Target path handed to the native tool.
+ * @param {string} options.content (in) - Formatted full-file content.
+ * @param {string} [options.before] (in) - Original snapshot, present only for edits.
+ * @param {{callId?: string, token?: unknown, agent?: unknown, signal?: AbortSignal}} options.exec (in) - Enclosing tool execution.
+ * @param {{execute?: (input: object) => Promise<any>}} options.tools (in) - Tool runtime.
+ *
  * @returns {Promise<{name: string, result: any}>} Inner tool name and settled result.
- * @throws {Error} When no tool dispatcher is reachable.
+ * @throws {Error} When the dispatcher is missing or rejects the call.
  */
-async function dispatchWrite({ filePath, content, exec, tools }) {
+async function dispatchWrite({ filePath, content, before, exec, tools }) {
 	if (typeof tools?.execute !== "function")
 		throw new Error(
 			`${PREFIX}This host exposes no tool dispatcher, so nothing was ` +
 				"written. Format with format_code and write the result yourself.",
 		);
-	const name = resolveWriteToolName(tools, exec?.agent);
-	// Always stamp a parent. The registry mints its own correlation
-	// token per execution, so a host that hands this tool one supplies a
-	// real key; when it does not, a synthetic unique stamp keeps the
-	// inner call a transport sub-dispatch, which is what makes it legal
-	// where a direct call to the write tool would be collapsed.
+	const editing = typeof before === "string";
+	const name = resolveMutationToolName(
+		tools,
+		exec?.agent,
+		editing ? "edit" : "write",
+	);
+	// Stamp a parent token for hosts that correlate sub-dispatches with
+	// their enclosing call; hosts that do not carry it ignore the extra
+	// field. The token also marks this write as self-dispatched for the
+	// gate while the dispatch is live.
 	const token = exec?.token ?? `${SELF_TOKEN_PREFIX}:${randomUUID()}`;
 	selfDispatched.add(token);
 	try {
-		const result = await tools.execute({
-			callId: mintCallId(exec?.callId, name),
-			rootCallId: exec?.rootCallId,
-			name,
-			arguments: { file_path: filePath, content },
-			agent: exec?.agent,
-			parent: token,
-			signal: exec?.signal,
-		});
-		return { name, result };
+		let batch;
+		try {
+			batch = await tools.execute({
+				calls: [
+					{
+						id: mintCallId(exec?.callId, name),
+						name,
+						arguments: editing
+							? { file_path: filePath, old_string: before, new_string: content }
+							: { file_path: filePath, content },
+					},
+				],
+				...(exec?.agent === undefined ? {} : { agent: exec.agent }),
+				// ponytail: the batch contract forwards no parent into the
+				// inner execution, so the gate re-checks these (identical,
+				// already-clean) bytes; a correlation pass-through would
+				// halve write_formatted's check cost.
+				parent: token,
+				signal: exec?.signal ?? new AbortController().signal,
+			});
+		} catch (error) {
+			// Without this wrapper a rejecting dispatcher escapes the handler
+			// and the harness reports only its opaque "Tool batch execution
+			// failed"; the real reason is carried here instead.
+			const cause = error?.cause;
+			throw new Error(
+				`${PREFIX}the inner ${name} dispatch failed: ` +
+					`${error?.message ?? String(error)}\n` +
+					`cause: ${cause?.stack ?? cause?.message ?? cause ?? "none"}`,
+				{ cause: error },
+			);
+		}
+		return { name, result: batch?.results?.[0]?.result ?? batch };
 	} finally {
 		if (token !== undefined && token !== null) selfDispatched.delete(token);
 	}
@@ -626,6 +652,7 @@ export function renderReceipt(value) {
  * @param {object} options - One write-through request.
  * @param {string} options.filePath - Target path; it is the evidence the declared language is checked against, and it need not exist yet.
  * @param {string} options.content - Complete pending file text.
+ * @param {string} [options.before] (in) - Original full-file snapshot, supplied only by formatAndEdit.
  * @param {string} options.language - Declared language key; it must agree with the path.
  * @param {string[]} [options.formatterArgs] - Extra arguments for the pinned formatter.
  * @param {{callId?: string, rootCallId?: string, token?: unknown, agent?: unknown, signal?: AbortSignal}} [options.exec] - Enclosing tool execution that owns the dispatch.
@@ -657,15 +684,14 @@ async function runThrough(options, writes) {
 				"chosen explicitly instead of guessed from a name. " +
 				skillPointer(run, String(filePath), policy),
 		);
-	if (!(language in SELECTORS))
+	const supported = [...Object.keys(SELECTORS), ...PACK_ROUTED_LANGUAGES];
+	if (!supported.includes(language))
 		throw new Error(
 			`${PREFIX}Unsupported language "${language}". Supported: ` +
 				`${supportedLanguages()}. ` +
 				skillPointer(run, String(filePath), policy),
 		);
 	const own = languageOfExtension(filePath, run, policy);
-	if (own === "rust")
-		throw new Error(rustReport(filePath, language, run, policy));
 	if (own === null)
 		throw new Error(unformattableReport(filePath, language, run, policy));
 	if (own !== language)
@@ -675,39 +701,97 @@ async function runThrough(options, writes) {
 	const available = languageForPath(filePath, run, policy);
 	if (writes !== true && available === null)
 		throw new Error(noFormatterPreviewReport(filePath, language, run, policy));
-	const before = measure(content);
+	const before = measure(options.before ?? content);
 	let formatted = content;
-	const hasFormatter = available !== null;
-	if (hasFormatter) {
-		const encoded = Buffer.from(content, "utf8").toString("base64");
-		const extra = (formatterArgs ?? [])
-			.map((argument) => JSON.stringify(argument))
-			.join(" ");
-		const rawInput =
-			`${SELECTORS[language]} --file ${JSON.stringify(filePath)}` +
-			` --content-base64 ${encoded}${extra ? ` -- ${extra}` : ""}`;
+	let formatterRan = false;
+	if (available !== null) {
 		const signal = exec?.signal ?? new AbortController().signal;
-		const result = await runFormatterCommand(rawInput, cwd, signal);
-		if (result.kind !== "success" || result.formattedContent === undefined) {
-			const raw = await assessCandidate(
+		if (language in SELECTORS) {
+			const encoded = Buffer.from(content, "utf8").toString("base64");
+			const extra = (formatterArgs ?? [])
+				.map((argument) => JSON.stringify(argument))
+				.join(" ");
+			const rawInput =
+				`${SELECTORS[language]} --file ${JSON.stringify(filePath)}` +
+				` --content-base64 ${encoded}${extra ? ` -- ${extra}` : ""}`;
+			const result = await runFormatterCommand(rawInput, cwd, signal);
+			if (result.kind !== "success" || result.formattedContent === undefined) {
+				const raw = await assessCandidate(
+					{ path: filePath, content },
+					{
+						run,
+						policy: { ...policy, formatOnWrite: false },
+						cwd,
+						enforcing,
+					},
+				);
+				throw new Error(formatterFailureReport(filePath, result, raw));
+			}
+			formatted = result.formattedContent;
+			formatterRan = true;
+		} else {
+			// Pack-routed language (for example Rust): the covering pack
+			// declares the formatter, so the engine runs it and captures stdout
+			// instead of refusing the path.
+			const result = await formatWithDeclaredFormatter(
 				{ path: filePath, content },
-				{
-					run,
-					policy: { ...policy, formatOnWrite: false },
-					cwd,
-					enforcing,
-				},
+				policy,
+				cwd,
+				{ signal },
 			);
-			throw new Error(formatterFailureReport(filePath, result, raw));
+			if (result.status === "formatted") {
+				formatted = result.text;
+				formatterRan = true;
+			} else if (result.status === "unavailable" && result.blocked) {
+				const raw = await assessCandidate(
+					{ path: filePath, content },
+					{
+						run,
+						policy: { ...policy, formatOnWrite: false },
+						cwd,
+						enforcing,
+					},
+				);
+				throw new Error(
+					formatterFailureReport(
+						filePath,
+						{
+							kind: "error",
+							text:
+								result.message ??
+								`${PREFIX}The pack-declared formatter is unavailable.`,
+						},
+						raw,
+					),
+				);
+			} else if (result.status === "error" || result.status === "unsupported") {
+				const raw = await assessCandidate(
+					{ path: filePath, content },
+					{
+						run,
+						policy: { ...policy, formatOnWrite: false },
+						cwd,
+						enforcing,
+					},
+				);
+				throw new Error(
+					formatterFailureReport(
+						filePath,
+						{ kind: "error", text: result.message },
+						raw,
+					),
+				);
+			}
+			// An allowed miss (blockOnMissingFormatter off) or a disabled gate
+			// falls through: the candidate is checked and written as sent.
 		}
-		formatted = result.formattedContent;
 	}
 	const after = measure(formatted);
 	const verdict = await assessCandidate(
 		{ path: filePath, content: formatted },
 		{
 			run,
-			policy: hasFormatter ? { ...policy, formatOnWrite: false } : policy,
+			policy: formatterRan ? { ...policy, formatOnWrite: false } : policy,
 			cwd,
 			enforcing,
 		},
@@ -715,7 +799,7 @@ async function runThrough(options, writes) {
 	const base = {
 		file_path: filePath,
 		language,
-		formatter: hasFormatter ? FORMATTER_BY_LANGUAGE[language] : "none",
+		formatter: formatterRan ? FORMATTER_BY_LANGUAGE[language] : "none",
 		changed: formatted !== content,
 		bytes_before: before.bytes,
 		bytes_after: after.bytes,
@@ -732,7 +816,7 @@ async function runThrough(options, writes) {
 			notWrittenReport(filePath, verdict, {
 				formatted,
 				changed: base.changed,
-				hasFormatter,
+				hasFormatter: formatterRan,
 				language,
 			}),
 		);
@@ -748,6 +832,7 @@ async function runThrough(options, writes) {
 	const dispatched = await dispatchWrite({
 		filePath,
 		content: formatted,
+		before: options.before,
 		exec,
 		tools,
 	});
@@ -766,9 +851,8 @@ async function runThrough(options, writes) {
 /**
  * Formats one candidate, checks the formatted bytes, and writes them when clean.
  *
- * This is the only path in the plugin that lands a file. It is deliberately
- * separate from the preview: a tool that could do both is a tool whose callers
- * cannot tell what it just did, so `format_code` previews and this writes.
+ * Whole-file writes and edits share the same formatting and validation pipeline.
+ * The preview stops before dispatch; this function dispatches a native write.
  *
  * @param {object} options - One write-through request.
  * @param {string} options.filePath - Target path, which need not exist yet.
@@ -785,6 +869,95 @@ async function runThrough(options, writes) {
  */
 export function formatAndWrite(options) {
 	return runThrough(options, true);
+}
+
+/**
+ * Apply a literal edit, format the full candidate, and dispatch a native edit.
+ *
+ * Read an existing UTF-8 snapshot and reuse the gate's line-ending-tolerant edit
+ * rules. Validate the formatted full file before dispatching through the normal
+ * tool runtime, with the snapshot as old_string and formatted text as new_string.
+ * The native edit retains its permission checks and rejects a stale snapshot
+ * rather than silently overwriting edits made during formatting.
+ *
+ * @param {object} options (in) - Edit request; caller-provided mutation fields are validated, while runtime services are trusted.
+ * @param {string} options.filePath (in) - Nonempty path of an existing file, resolved against cwd for the snapshot read.
+ * @param {string} options.oldString (in) - Nonempty literal needle; exactly one match is required unless replaceAll is true.
+ * @param {string} options.newString (in) - Literal replacement, which may be empty; dollar signs are not expanded.
+ * @param {boolean} [options.replaceAll] (in) - Replace every non-overlapping match when true; defaults to false.
+ * @param {string} options.language (in) - Supported language key matching the target path, as required by formatAndWrite.
+ * @param {string[]} [options.formatterArgs] (in) - Additional formatter arguments; defaults to an empty array.
+ * @param {{callId?: string, rootCallId?: string, token?: unknown, agent?: unknown, signal?: AbortSignal}} [options.exec] (in) - Enclosing execution and cancellation signal.
+ * @param {{execute?: (input: object) => Promise<any>, get?: (name: string, scope?: unknown) => unknown}} [options.tools] (in) - Trusted runtime used for the guarded inner native edit.
+ * @param {typeof import("../hook/run.mjs")} options.run (in) - Trusted validator namespace providing applyEditPair and the shared checks.
+ * @param {Record<string, unknown>} options.policy (in) - Effective documentation and formatter policy.
+ * @param {string} [options.cwd] (in) - Workspace root; defaults to the execution agent's session cwd, then process.cwd().
+ *
+ * @returns {Promise<Record<string, unknown>>} Applied receipt with formatter,
+ * validation, findings, and snapshot-to-result byte and line counts. Rejects
+ * with Error for invalid input, unreadable files, absent or ambiguous matches,
+ * formatter/check failures, cancellation, or native-edit refusal. This helper
+ * writes nothing before native dispatch; a refused stale edit preserves the
+ * intervening file changes. Runtime dispatch errors retain their cause.
+ *
+ * @example
+ * ```js
+ * import * as run from "../hook/run.mjs";
+ * import { formatAndEdit } from "./write-through.mjs";
+ * const receipt = await formatAndEdit({
+ *   filePath: "src/host/write-through.mjs",
+ *   oldString: "@module coding-doc-standard-write-through",
+ *   newString: "@module coding-doc-standard-write-through",
+ *   language: "javascript",
+ *   run,
+ *   policy: { enabled: false, formatTypescriptJavascript: false },
+ *   tools: { execute: async () => ({ results: [{ result: {} }] }) },
+ * });
+ * console.log(receipt.applied); // true; mock dispatch leaves disk unchanged
+ * ```
+ */
+export async function formatAndEdit(options) {
+	if (!options || typeof options !== "object" || Array.isArray(options))
+		throw new Error(`${PREFIX}Edit options must be an object.`);
+	const { filePath, oldString, newString, replaceAll = false } = options;
+	if (typeof filePath !== "string" || filePath.trim() === "")
+		throw new Error(`${PREFIX}file_path is required.`);
+	if (typeof oldString !== "string" || oldString === "")
+		throw new Error(`${PREFIX}old_string must be a nonempty string.`);
+	if (typeof newString !== "string")
+		throw new Error(`${PREFIX}new_string must be a string.`);
+	if (typeof replaceAll !== "boolean")
+		throw new Error(`${PREFIX}replace_all must be a boolean.`);
+	if (
+		options.formatterArgs !== undefined &&
+		(!Array.isArray(options.formatterArgs) ||
+			options.formatterArgs.some((argument) => typeof argument !== "string"))
+	)
+		throw new Error(`${PREFIX}formatter_args must be an array of strings.`);
+	if (options.cwd !== undefined && typeof options.cwd !== "string")
+		throw new Error(`${PREFIX}cwd must be a string.`);
+	const cwd =
+		options.cwd ?? options.exec?.agent?.session?.header?.cwd ?? process.cwd();
+	let before;
+	try {
+		before = await readFile(resolve(cwd, filePath), "utf8");
+	} catch (error) {
+		throw new Error(
+			`${PREFIX}The existing file ${filePath} could not be read; nothing was written: ${error.code ?? error.message}`,
+			{ cause: error },
+		);
+	}
+	const content = options.run.applyEditPair(
+		before,
+		oldString,
+		newString,
+		replaceAll,
+	);
+	if (content === null)
+		throw new Error(
+			`${PREFIX}old_string ${replaceAll ? "must match at least once" : "must match exactly once"} in ${filePath}; no unambiguous edit exists. Nothing was written.`,
+		);
+	return runThrough({ ...options, content, before, cwd }, true);
 }
 
 /**

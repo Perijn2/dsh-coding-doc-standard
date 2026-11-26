@@ -67,6 +67,15 @@ const DOCUMENTED_TS = [
 
 const UNDOCUMENTED_TS = "export const undocumented = compute( 1,2 );\n";
 
+const DOCUMENTED_RS = [
+	"//! Author: Perijn Huijser",
+	"//! Summary: Provides one documented function for the write-through tests.",
+	"",
+	"/// Runs the documented entry point.",
+	"pub fn run() {}",
+	"",
+].join("\n");
+
 /**
  * Builds a policy fixture that switches on every formatter this path can use.
  *
@@ -95,7 +104,7 @@ function fixture(overrides = {}) {
 /**
  * Builds a recording tool runtime that stands in for the real dispatcher.
  *
- * @param {any} [result] - Result the inner write resolves with.
+ * @param {any} [result] - Result the inner write resolves with, in harness batch form.
  * @param {((input: object) => Promise<void>) | null} [onExecute] - Observer called while the dispatch is live.
  * @returns {{calls: object[], get: (name: string) => any, execute: (input: object) => Promise<any>}} Recording tool runtime.
  */
@@ -112,7 +121,11 @@ function makeTools(
 		async execute(input) {
 			calls.push(input);
 			if (onExecute) await onExecute(input);
-			return result;
+			return {
+				results: [{ callId: input.calls[0].id, result }],
+				additionalContexts: [],
+				concluded: false,
+			};
 		},
 	};
 }
@@ -143,7 +156,11 @@ test("maps a candidate path onto its tool language", () => {
 		languageForPath("a/compose.yaml", run, policy),
 		"docker-compose",
 	);
-	assert.equal(languageForPath("a/b/c.rs", run, policy), null);
+	assert.equal(languageForPath("a/b/c.rs", run, policy), "rust");
+	assert.equal(
+		languageForPath("a/b/c.rs", run, fixture({ formatRust: false })),
+		null,
+	);
 	assert.equal(languageForPath("notes/plan.txt", run, policy), null);
 });
 
@@ -225,7 +242,7 @@ test("refuses a language that contradicts the file extension", async () => {
 			assert.match(error.message, /Nothing was written/u);
 			assert.match(
 				error.message,
-				/skill\/references\/typescript-javascript\.md/u,
+				/coding-doc-standard-typescript-javascript pack skill/u,
 			);
 			return true;
 		},
@@ -247,7 +264,7 @@ test("refuses a language that contradicts the file extension", async () => {
 	);
 });
 
-test("refuses a Rust path because rustfmt is the project toolchain", async () => {
+test("reports a language mismatch for a Rust path, not a blanket refusal", async () => {
 	const tools = makeTools();
 	await assert.rejects(
 		() =>
@@ -263,13 +280,30 @@ test("refuses a Rust path because rustfmt is the project toolchain", async () =>
 		(error) => {
 			assert.match(
 				error.message,
-				/is Rust, which this plugin does not format/u,
+				/That path is rust and formats with rustfmt/u,
 			);
-			assert.match(error.message, /cargo fmt/u);
 			return true;
 		},
 	);
 	assert.equal(tools.calls.length, 0);
+});
+
+test("writes a Rust file documentation-checked but unformatted when formatRust is off", async () => {
+	const tools = makeTools();
+	const receipt = await formatAndWrite({
+		filePath: "src/lib.rs",
+		content: DOCUMENTED_RS,
+		language: "rust",
+		exec: execution("tok-rust-off"),
+		tools,
+		run,
+		policy: fixture({ formatRust: false }),
+		cwd: root,
+	});
+	assert.equal(receipt.applied, true);
+	assert.equal(receipt.formatter, "none");
+	assert.equal(tools.calls.length, 1);
+	assert.equal(tools.calls[0].calls[0].arguments.content, DOCUMENTED_RS);
 });
 
 test("refuses a path with no formatter-backed extension", async () => {
@@ -360,13 +394,14 @@ test("writes the formatted bytes through one inner write", async () => {
 	assert.equal(receipt.validation, "pass", receipt.note);
 	assert.equal("formatted_content" in receipt, false);
 	assert.equal(tools.calls.length, 1);
-	const inner = tools.calls[0];
+	const batch = tools.calls[0];
+	const inner = batch.calls[0];
 	assert.equal(inner.name, "write");
 	assert.equal(inner.arguments.file_path, "src/example.ts");
 	assert.match(inner.arguments.content, /export const ANSWER = 42;/u);
 	assert.doesNotMatch(inner.arguments.content, /ANSWER=42/u);
-	assert.equal(inner.parent, "tok-write");
-	assert.match(inner.callId, /^call-tok-write:write:[0-9a-f-]{36}$/u);
+	assert.equal(batch.parent, "tok-write");
+	assert.match(inner.id, /^call-tok-write:write:[0-9a-f-]{36}$/u);
 	assert.equal(selfDispatchDepth(), 0);
 });
 
@@ -387,7 +422,7 @@ test("writes a file whose formatter the policy switched off", async () => {
 	assert.equal(receipt.language, "typescript");
 	assert.equal(receipt.changed, false);
 	assert.equal(tools.calls.length, 1);
-	assert.equal(tools.calls[0].arguments.content, DOCUMENTED_TS);
+	assert.equal(tools.calls[0].calls[0].arguments.content, DOCUMENTED_TS);
 });
 
 test("holds the self-dispatch token only while its write is live", async () => {
@@ -486,6 +521,30 @@ test("surfaces a refused inner write and releases the token", async () => {
 				cwd: root,
 			}),
 		/refused the formatted text for src\/refused\.ts/u,
+	);
+	assert.equal(selfDispatchDepth(), 0);
+});
+
+test("reports the real cause when the dispatcher itself rejects", async () => {
+	const tools = makeTools();
+	tools.execute = async () => {
+		throw new Error("Tool batch execution failed", {
+			cause: new Error("inner boom"),
+		});
+	};
+	await assert.rejects(
+		() =>
+			formatAndWrite({
+				filePath: "src/reject.ts",
+				content: DOCUMENTED_TS,
+				language: "typescript",
+				exec: execution("tok-reject"),
+				tools,
+				run,
+				policy: fixture(),
+				cwd: root,
+			}),
+		/the inner write dispatch failed: Tool batch execution failed[\s\S]*inner boom/u,
 	);
 	assert.equal(selfDispatchDepth(), 0);
 });
