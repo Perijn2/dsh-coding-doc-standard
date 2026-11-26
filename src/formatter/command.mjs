@@ -1,4 +1,4 @@
-﻿/**
+/**
  * @module managed-formatter-command
  * @author Perijn Huijser
  * Resolves and runs package-managed formatters for the DSH slash command.
@@ -271,14 +271,24 @@ export async function runFormatterCommand(rawInput, cwd, signal) {
 		child.stdout.setEncoding("utf8");
 		child.stderr.setEncoding("utf8");
 		child.stdout.on("data", (chunk) => {
-			stdout = `${stdout}${chunk}`.slice(
-				request.content === null ? -8000 : -200000,
-			);
+			// In pending-content mode stdout is the formatted file itself: a
+			// cap there silently truncates large files, so it accumulates in
+			// full. A file-mode run only needs the tail of the report.
+			stdout =
+				request.content === null
+					? `${stdout}${chunk}`.slice(-8000)
+					: stdout + chunk;
 		});
 		child.stderr.on("data", (chunk) => {
 			stderr = `${stderr}${chunk}`.slice(-8000);
 		});
-		if (request.content !== null) child.stdin.end(request.content);
+		if (request.content !== null) {
+			// A formatter that exits before draining a large pending file fails
+			// the write on the stream itself; without this listener that
+			// unhandled 'error' event takes the whole host process down.
+			child.stdin.on("error", () => {});
+			child.stdin.end(request.content);
+		}
 		const abort = () => child.kill();
 		signal.addEventListener("abort", abort, { once: true });
 		child.once("error", (error) => {
