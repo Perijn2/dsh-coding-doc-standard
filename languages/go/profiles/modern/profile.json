@@ -1,0 +1,38 @@
+{
+	"id": "modern",
+	"languageVersions": ">=0",
+	"policyLanguage": "go",
+	"extensions": [".go"],
+	"codec": {
+		"headerSyntax": "line",
+		"headerToken": "//",
+		"fields": {
+			"author": "Author:",
+			"summary": "Summary:",
+			"description": "Description:",
+			"usage": "Usage:",
+			"changelog": "Changelog:",
+			"notes": "Notes:"
+		}
+	},
+	"units": {
+		"provider": "tree-sitter",
+		"grammar": "go",
+		"query": "queries/units.scm",
+		"docBinding": {
+			"syntax": "line",
+			"token": "//"
+		}
+	},
+	"naming": {
+		"source": "https://go.dev/doc/effective_go#names",
+		"grammar": "go",
+		"rules": [
+			{
+				"query": "[(function_declaration name: (_) @name) (method_declaration name: (_) @name) (type_spec name: (_) @name) (const_spec (identifier) @name)]",
+				"style": "MixedCaps",
+				"label": "declaration"
+			}
+		]
+	}
+}

@@ -1,0 +1,17 @@
+{
+	"id": "csharp",
+	"label": "C#",
+	"packVersion": "1.0.0",
+	"language": {
+		"name": "C#",
+		"defaultProfile": "modern"
+	},
+	"profiles": ["modern"],
+	"dependencies": {
+		"units": {
+			"provider": "tree-sitter",
+			"grammar": "c_sharp",
+			"query": "queries/units.scm"
+		}
+	}
+}

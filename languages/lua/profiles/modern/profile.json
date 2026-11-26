@@ -1,6 +1,7 @@
 {
 	"id": "modern",
 	"languageVersions": ">=5.1",
+	"policyLanguage": "lua",
 	"extensions": [".lua"],
 	"preamble": {
 		"shebang": true

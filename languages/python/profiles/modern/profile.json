@@ -1,6 +1,7 @@
 {
 	"id": "modern",
 	"languageVersions": ">=3.8",
+	"policyLanguage": "python",
 	"extensions": [".py", ".pyi"],
 	"formatterOnly": true,
 	"formatter": {
@@ -20,8 +21,47 @@
 		"cleanExit": [0],
 		"diagnostics": "stderr"
 	},
+	"preamble": {
+		"shebang": true,
+		"patterns": ["^[ \\t]*#.*coding[:=][ \\t]*[-\\w.]+[^\\n]*\\n?"]
+	},
+	"codec": {
+		"headerSyntax": "docstring",
+		"headerOpen": "\"\"\"",
+		"headerClose": "\"\"\"",
+		"fields": {
+			"author": "Author:",
+			"summary": "Summary:",
+			"description": "Description:",
+			"usage": "Usage:",
+			"changelog": "Changelog:",
+			"notes": "Notes:"
+		}
+	},
 	"units": {
-		"provider": "regex",
-		"pattern": "(?!)x"
+		"provider": "tree-sitter",
+		"grammar": "python",
+		"query": "queries/units.scm",
+		"excludeNamePattern": "^_",
+		"docBinding": {
+			"syntax": "docstring"
+		}
+	},
+	"naming": {
+		"source": "https://peps.python.org/pep-0008/#naming-conventions",
+		"grammar": "python",
+		"rules": [
+			{
+				"query": "(class_definition name: (identifier) @name)",
+				"style": "UpperCamelCase",
+				"label": "class"
+			},
+			{
+				"query": "(function_definition name: (identifier) @name)",
+				"style": "snake_case",
+				"label": "function",
+				"excludeQuery": "[(decorated_definition (decorator (identifier) @annotation) definition: (function_definition name: (identifier) @name) (#eq? @annotation \"override\")) (decorated_definition (decorator (attribute attribute: (identifier) @annotation)) definition: (function_definition name: (identifier) @name) (#eq? @annotation \"override\"))]"
+			}
+		]
 	}
 }

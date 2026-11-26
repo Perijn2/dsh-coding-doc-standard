@@ -1,0 +1,17 @@
+{
+	"id": "java",
+	"label": "Java",
+	"packVersion": "1.0.0",
+	"language": {
+		"name": "Java",
+		"defaultProfile": "modern"
+	},
+	"profiles": ["modern"],
+	"dependencies": {
+		"units": {
+			"provider": "tree-sitter",
+			"grammar": "java",
+			"query": "queries/units.scm"
+		}
+	}
+}

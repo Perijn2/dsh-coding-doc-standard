@@ -1,0 +1,55 @@
+# Author: Perijn Huijser
+# Summary: Run the retry probe service with its cache for local use.
+#
+# Description:
+#   Two services: the probe application and the redis cache it requires.
+#   The stack owns no persistent state; deleting it loses nothing.
+#
+#   Quickstart:
+#     docker compose up -d              # start cache and probe
+#     curl http://localhost:8080/health # expect: {"status":"ok"}
+#     docker compose down               # remove both containers
+#
+#   The probe refuses to start without the probe_token config value; fix
+#   it by creating secrets/probe_token.txt (see the configs entry below).
+#
+# Changelog:
+#   2026-08: Dropped the standalone redis-cli debug service.
+
+services:
+  # Summary: Run the retry probe application.
+  #
+  # Notes: Needs probe_token and redis; startup fails, not degrades, when
+  #   either is missing. Port 8080 is the only caller-visible endpoint.
+  probe:
+    image: example/probe:1.4
+    ports:
+      - "8080:8080"
+    configs:
+      - probe_token
+    environment:
+      REDIS_URL: redis://cache:6379
+    depends_on:
+      cache:
+        condition: service_started
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8080/health"]
+      interval: 30s
+      timeout: 3s
+      retries: 3
+
+  # Summary: Hold probe results in memory for the probe's backoff logic.
+  #
+  # Notes: Volatile storage on purpose — a restart only forces re-probing.
+  #   Not exposed on the host; only the probe service reaches it.
+  cache:
+    image: redis:7-alpine
+    command: ["redis-server", "--save", "", "--appendonly", "no"]
+
+# Summary: File the probe reads at startup for its API token.
+#
+# Notes: Source file is not in version control; create secrets/probe_token.txt
+#   with any single-line token before `docker compose up`.
+configs:
+  probe_token:
+    file: ./secrets/probe_token.txt

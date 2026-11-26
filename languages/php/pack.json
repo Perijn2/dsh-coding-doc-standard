@@ -1,0 +1,17 @@
+{
+	"id": "php",
+	"label": "PHP",
+	"packVersion": "1.0.0",
+	"language": {
+		"name": "PHP",
+		"defaultProfile": "modern"
+	},
+	"profiles": ["modern"],
+	"dependencies": {
+		"units": {
+			"provider": "tree-sitter",
+			"grammar": "php",
+			"query": "queries/units.scm"
+		}
+	}
+}

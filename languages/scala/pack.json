@@ -1,0 +1,17 @@
+{
+	"id": "scala",
+	"label": "Scala",
+	"packVersion": "1.0.0",
+	"language": {
+		"name": "Scala",
+		"defaultProfile": "modern"
+	},
+	"profiles": ["modern"],
+	"dependencies": {
+		"units": {
+			"provider": "tree-sitter",
+			"grammar": "scala",
+			"query": "queries/units.scm"
+		}
+	}
+}

@@ -1,6 +1,7 @@
 {
 	"id": "modern",
 	"languageVersions": "*",
+	"policyLanguage": "dockerCompose",
 	"extensions": [],
 	"filenames": [
 		"compose.yaml",
@@ -27,8 +28,25 @@
 		"cleanExit": [0],
 		"diagnostics": "stderr"
 	},
+	"codec": {
+		"headerSyntax": "line",
+		"headerToken": "#",
+		"fields": {
+			"author": "Author:",
+			"summary": "Summary:",
+			"description": "Description:",
+			"usage": "Usage:",
+			"changelog": "Changelog:",
+			"notes": "Notes:"
+		}
+	},
 	"units": {
-		"provider": "regex",
-		"pattern": "(?!)x"
+		"provider": "tree-sitter",
+		"grammar": "yaml",
+		"query": "queries/units.scm",
+		"docBinding": {
+			"syntax": "line",
+			"token": "#"
+		}
 	}
 }

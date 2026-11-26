@@ -1,0 +1,55 @@
+{
+	"id": "modern",
+	"languageVersions": ">=0",
+	"policyLanguage": "kotlin",
+	"extensions": [".kt", ".kts"],
+	"codec": {
+		"headerSyntax": "block",
+		"headerOpen": "/**",
+		"headerClose": "*/",
+		"continuation": "*",
+		"tagSigil": "@",
+		"unlabeled": "summary",
+		"fields": {
+			"author": ["@author", "Author:"],
+			"summary": ["Summary:"],
+			"description": ["Description:"],
+			"usage": ["Usage:"],
+			"changelog": ["Changelog:"],
+			"notes": ["Notes:"]
+		}
+	},
+	"units": {
+		"provider": "tree-sitter",
+		"grammar": "kotlin",
+		"query": "queries/units.scm",
+		"docBinding": {
+			"syntax": "block",
+			"open": "/**",
+			"close": "*/",
+			"continuation": "*"
+		}
+	},
+	"naming": {
+		"source": "https://kotlinlang.org/docs/coding-conventions.html#naming-rules",
+		"grammar": "kotlin",
+		"rules": [
+			{
+				"query": "[(class_declaration (type_identifier) @name) (object_declaration (type_identifier) @name)]",
+				"style": "UpperCamelCase",
+				"label": "type"
+			},
+			{
+				"query": "(function_declaration (modifiers)? @exclude (simple_identifier) @name)",
+				"style": "MixedCaps",
+				"label": "function (including class-like factories)",
+				"excludeNamePattern": "^`"
+			},
+			{
+				"query": "((property_declaration (modifiers (property_modifier) @modifier) (variable_declaration (simple_identifier) @name)) (#eq? @modifier \"const\"))",
+				"style": "SCREAMING_SNAKE_CASE",
+				"label": "const property"
+			}
+		]
+	}
+}

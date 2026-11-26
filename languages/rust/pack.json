@@ -1,0 +1,17 @@
+{
+	"id": "rust",
+	"label": "Rust",
+	"packVersion": "1.0.0",
+	"language": {
+		"name": "Rust",
+		"defaultProfile": "modern"
+	},
+	"profiles": ["modern"],
+	"dependencies": {
+		"units": {
+			"provider": "tree-sitter",
+			"grammar": "rust",
+			"query": "queries/units.scm"
+		}
+	}
+}

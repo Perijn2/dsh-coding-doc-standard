@@ -1,0 +1,51 @@
+{
+	"id": "modern",
+	"languageVersions": ">=0",
+	"policyLanguage": "scala",
+	"extensions": [".scala"],
+	"codec": {
+		"headerSyntax": "block",
+		"headerOpen": "/**",
+		"headerClose": "*/",
+		"continuation": "*",
+		"tagSigil": "@",
+		"unlabeled": "summary",
+		"fields": {
+			"author": ["@author", "Author:"],
+			"summary": ["Summary:"],
+			"description": ["Description:"],
+			"usage": ["Usage:"],
+			"changelog": ["Changelog:"],
+			"notes": ["Notes:"]
+		}
+	},
+	"units": {
+		"provider": "tree-sitter",
+		"grammar": "scala",
+		"query": "queries/units.scm",
+		"docBinding": {
+			"syntax": "block",
+			"open": "/**",
+			"close": "*/",
+			"continuation": "*"
+		}
+	},
+	"naming": {
+		"source": "https://docs.scala-lang.org/style/naming-conventions.html",
+		"grammar": "scala",
+		"rules": [
+			{
+				"query": "[(class_definition name: (_) @name) (trait_definition name: (_) @name)]",
+				"style": "UpperCamelCase",
+				"label": "type",
+				"excludeQuery": "((class_definition name: (_) @name extend: (extends_clause type: (_) @base)) (#match? @base \"StaticAnnotation$\"))"
+			},
+			{
+				"query": "(function_definition name: (identifier) @name)",
+				"style": "lowerCamelCase",
+				"label": "function",
+				"excludeNamePattern": "^[^\\p{L}_]"
+			}
+		]
+	}
+}

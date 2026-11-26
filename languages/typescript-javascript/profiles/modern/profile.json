@@ -1,6 +1,7 @@
 {
 	"id": "modern",
 	"languageVersions": ">=5.0",
+	"policyLanguage": "typescriptJavascript",
 	"extensions": [".ts", ".tsx", ".mts", ".cts", ".js", ".jsx", ".mjs", ".cjs"],
 	"formatterOnly": true,
 	"formatter": {
@@ -19,8 +20,23 @@
 		"cleanExit": [0],
 		"diagnostics": "stderr"
 	},
-	"units": {
-		"provider": "regex",
-		"pattern": "(?!)x"
+	"preamble": {
+		"shebang": true
+	},
+	"codec": {
+		"headerSyntax": "block",
+		"headerOpen": "/**",
+		"headerClose": "*/",
+		"continuation": "*",
+		"tagSigil": "@",
+		"unlabeled": "summary",
+		"fields": {
+			"author": ["@author", "Author:"],
+			"summary": ["Summary:"],
+			"description": ["Description:"],
+			"usage": ["Usage:"],
+			"changelog": ["Changelog:"],
+			"notes": ["Notes:"]
+		}
 	}
 }

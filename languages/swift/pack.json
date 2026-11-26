@@ -1,0 +1,17 @@
+{
+	"id": "swift",
+	"label": "Swift",
+	"packVersion": "1.0.0",
+	"language": {
+		"name": "Swift",
+		"defaultProfile": "modern"
+	},
+	"profiles": ["modern"],
+	"dependencies": {
+		"units": {
+			"provider": "tree-sitter",
+			"grammar": "swift",
+			"query": "queries/units.scm"
+		}
+	}
+}

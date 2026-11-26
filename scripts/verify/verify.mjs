@@ -23,6 +23,8 @@ import { existsSync, readFileSync } from "node:fs";
 import { homedir } from "node:os";
 import { basename, dirname, extname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
+import { packCoverageFor } from "../../src/engine/index.mjs";
+import { checkNaming } from "../../src/engine/naming.mjs";
 import {
 	platformKey,
 	resolveDoxygenBinary,
@@ -139,6 +141,19 @@ if (!paths.length && doxygenIndex === -1) {
 	for (const path of paths) {
 		if (!existsSync(path))
 			throw new Error(`verification path does not exist: ${path}`);
+		const coverage = packCoverageFor(path);
+		if (coverage?.profile.naming) {
+			const findings = await checkNaming(
+				readFileSync(path, "utf8"),
+				coverage.profile,
+			);
+			if (findings.length)
+				throw new Error(
+					findings
+						.map(({ line, message }) => `${path}:${line} ${message}`)
+						.join("\n"),
+				);
+		}
 		if (isCompose(path)) {
 			execute("prettier", ["--check", path]);
 			execute("yamllint", [path]);
@@ -149,6 +164,8 @@ if (!paths.length && doxygenIndex === -1) {
 			case ".py":
 				execute("ruff", ["format", "--check", path]);
 				execute("ruff", ["check", path]);
+				// Examples in docstrings are executable contracts: run them.
+				execute("python", ["-m", "doctest", path]);
 				break;
 			case ".ts":
 			case ".js":

@@ -1,0 +1,49 @@
+{
+	"id": "modern",
+	"languageVersions": ">=0",
+	"policyLanguage": "csharp",
+	"extensions": [".cs"],
+	"codec": {
+		"headerSyntax": "line",
+		"headerToken": "///",
+		"fields": {
+			"author": ["Author:", "@author"],
+			"summary": ["Summary:"],
+			"description": ["Description:"],
+			"usage": ["Usage:"],
+			"changelog": ["Changelog:"],
+			"notes": ["Notes:"]
+		}
+	},
+	"units": {
+		"provider": "tree-sitter",
+		"grammar": "c_sharp",
+		"query": "queries/units.scm",
+		"docBinding": {
+			"syntax": "line",
+			"token": "///"
+		}
+	},
+	"naming": {
+		"source": "https://learn.microsoft.com/en-us/dotnet/csharp/fundamentals/coding-style/identifier-names",
+		"grammar": "c_sharp",
+		"rules": [
+			{
+				"query": "[(class_declaration name: (_) @name) (struct_declaration name: (_) @name) (interface_declaration name: (_) @name) (enum_declaration name: (_) @name) (record_declaration name: (_) @name) (enum_member_declaration name: (_) @name)]",
+				"style": "UpperCamelCase",
+				"label": "type or enum member"
+			},
+			{
+				"query": "(method_declaration name: (_) @name)",
+				"style": "UpperCamelCase",
+				"label": "method",
+				"excludeQuery": "[((method_declaration (modifier) @modifier name: (_) @name) (#eq? @modifier \"override\")) (method_declaration (explicit_interface_specifier) name: (_) @name)]"
+			},
+			{
+				"query": "([(field_declaration (modifier) @modifier (variable_declaration (variable_declarator name: (_) @name))) (local_declaration_statement (modifier) @modifier (variable_declaration (variable_declarator name: (_) @name)))] (#eq? @modifier \"const\"))",
+				"style": "UpperCamelCase",
+				"label": "constant"
+			}
+		]
+	}
+}

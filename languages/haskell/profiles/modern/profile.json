@@ -1,0 +1,31 @@
+{
+	"id": "modern",
+	"languageVersions": ">=0",
+	"policyLanguage": "haskell",
+	"extensions": [".hs"],
+	"preamble": {
+		"patterns": ["^\\{-#.*#-\\}[ \\t]*\\r?\\n"]
+	},
+	"codec": {
+		"headerSyntax": "line",
+		"headerToken": "--",
+		"fields": {
+			"author": ["Author:", "| Author:"],
+			"summary": "Summary:",
+			"description": "Description:",
+			"usage": "Usage:",
+			"changelog": "Changelog:",
+			"notes": "Notes:"
+		}
+	},
+	"units": {
+		"provider": "regex",
+		"pattern": "^([a-zA-Z_][a-zA-Z0-9']*)\\s*::",
+		"flags": "gm",
+		"kind": "function",
+		"docBinding": {
+			"syntax": "line",
+			"token": "-- |"
+		}
+	}
+}

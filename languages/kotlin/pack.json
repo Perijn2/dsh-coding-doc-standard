@@ -1,0 +1,17 @@
+{
+	"id": "kotlin",
+	"label": "Kotlin",
+	"packVersion": "1.0.0",
+	"language": {
+		"name": "Kotlin",
+		"defaultProfile": "modern"
+	},
+	"profiles": ["modern"],
+	"dependencies": {
+		"units": {
+			"provider": "tree-sitter",
+			"grammar": "kotlin",
+			"query": "queries/units.scm"
+		}
+	}
+}

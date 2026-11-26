@@ -16,7 +16,14 @@
  *   Worked example: node scripts/install/install.mjs --dry-run
  */
 
-import { cpSync, existsSync, mkdirSync, readFileSync, rmSync } from "node:fs";
+import {
+	cpSync,
+	existsSync,
+	mkdirSync,
+	readdirSync,
+	readFileSync,
+	rmSync,
+} from "node:fs";
 import { homedir } from "node:os";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -40,6 +47,29 @@ if (!dryRun) {
 	rmSync(skillTarget, { recursive: true, force: true });
 	mkdirSync(dirname(skillTarget), { recursive: true });
 	cpSync(join(packageRoot, "skill"), skillTarget, { recursive: true });
+}
+
+// Each language pack ships its own skill, installed alongside the shared one
+// as coding-doc-standard-<pack id>, matching the names the refusal pointers
+// and the registry use.
+for (const entry of readdirSync(join(packageRoot, "languages"), {
+	withFileTypes: true,
+})) {
+	if (!entry.isDirectory()) continue;
+	const packSkill = join(packageRoot, "languages", entry.name, "skill");
+	if (!existsSync(packSkill)) continue;
+	const target = join(
+		homedir(),
+		".dsh",
+		"skills",
+		`${packageJson.name}-${entry.name}`,
+	);
+	console.log(`${dryRun ? "would copy" : "copying"} skill ${target}`);
+	if (!dryRun) {
+		rmSync(target, { recursive: true, force: true });
+		mkdirSync(dirname(target), { recursive: true });
+		cpSync(packSkill, target, { recursive: true });
+	}
 }
 
 // The loader composes layers only from each profile's `dsh.profile.bundles` list,

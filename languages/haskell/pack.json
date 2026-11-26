@@ -1,0 +1,15 @@
+{
+	"id": "haskell",
+	"label": "Haskell",
+	"packVersion": "1.0.0",
+	"language": {
+		"name": "Haskell",
+		"defaultProfile": "modern"
+	},
+	"profiles": ["modern"],
+	"dependencies": {
+		"units": {
+			"provider": "regex"
+		}
+	}
+}

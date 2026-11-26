@@ -1,0 +1,49 @@
+{
+	"id": "modern",
+	"languageVersions": ">=0",
+	"policyLanguage": "dart",
+	"extensions": [".dart"],
+	"codec": {
+		"headerSyntax": "line",
+		"headerToken": "///",
+		"fields": {
+			"author": "Author:",
+			"summary": "Summary:",
+			"description": "Description:",
+			"usage": "Usage:",
+			"changelog": "Changelog:",
+			"notes": "Notes:"
+		}
+	},
+	"units": {
+		"provider": "tree-sitter",
+		"grammar": "dart",
+		"query": "queries/units.scm",
+		"docBinding": {
+			"syntax": "line",
+			"token": "///"
+		}
+	},
+	"naming": {
+		"source": "https://dart.dev/effective-dart/style",
+		"grammar": "dart",
+		"rules": [
+			{
+				"query": "[(class_definition name: (_) @name) (enum_declaration name: (_) @name)]",
+				"style": "UpperCamelCase",
+				"label": "type"
+			},
+			{
+				"query": "(function_signature name: (_) @name)",
+				"style": "lowerCamelCase",
+				"label": "function",
+				"excludeQuery": "((class_body (annotation name: (identifier) @annotation) . [(method_signature (function_signature name: (_) @name)) (declaration (function_signature name: (_) @name))]) (#eq? @annotation \"override\"))"
+			},
+			{
+				"query": "(enum_constant name: (_) @name)",
+				"style": "lowerCamelCase",
+				"label": "enum value"
+			}
+		]
+	}
+}

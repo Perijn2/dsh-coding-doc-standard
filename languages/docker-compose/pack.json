@@ -7,5 +7,11 @@
 		"defaultProfile": "modern"
 	},
 	"profiles": ["modern"],
-	"dependencies": {}
+	"dependencies": {
+		"units": {
+			"provider": "tree-sitter",
+			"grammar": "yaml",
+			"query": "queries/units.scm"
+		}
+	}
 }
