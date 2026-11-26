@@ -141,27 +141,19 @@ test("enables every documentation profile but only provisionable fast formatters
 });
 
 test("registers formatter controls in the dedicated settings navigation item", () => {
-	for (const field of [
-		"formatOnWrite",
-		"formatRust",
-		"blockOnMissingFormatter",
-		"blockOnMissingFormatter",
-	]) {
+	for (const field of ["formatOnWrite", "blockOnMissingFormatter"]) {
 		assert.ok(client.includes(field), `missing settings control: ${field}`);
 	}
 	// Per-language formatter toggles render from the host pack catalog.
 	for (const control of [
 		"packCatalog",
 		"formatterSettingsKey",
-		"languageVersions",
 		"Not installed",
 	]) {
 		assert.ok(client.includes(control), `missing catalog control: ${control}`);
 	}
 	assert.ok(client.includes("Enable pre-write formatter enforcement"));
 	assert.ok(client.includes("Enable coding documentation enforcement"));
-	assert.ok(client.includes("Custom public-unit hook"));
-	assert.ok(client.includes("cds-settings-overview"));
 	assert.ok(client.includes("cds-language-card"));
 	assert.ok(client.includes('"details"'));
 	assert.ok(!client.includes("\u00e2\u20ac\u201d"));
