@@ -14,6 +14,7 @@
 
 import { decodeDocument } from "./codec.mjs";
 import { checkDocumentation } from "./contract.mjs";
+import { checkNaming } from "./naming.mjs";
 import { resolveProfile } from "./profiles.mjs";
 import { discoverUnits, ProviderUnavailableError } from "./providers.mjs";
 import { getRegistry, packForPath } from "./registry.mjs";
@@ -33,6 +34,13 @@ export function packCoverageFor(path, policy = {}) {
 	// does not cover the path and legacy passes keep their previous behavior.
 	if (policy?.packProfiles?.[coverage.pack.manifest.id]?.[profile.id] === false)
 		return null;
+	// The per-language master switch gates pack coverage exactly as it gates the
+	// legacy checker, so one toggle behaves alike on every covered path.
+	if (
+		typeof profile.policyLanguage === "string" &&
+		policy?.languages?.[profile.policyLanguage] === false
+	)
+		return null;
 	return { pack: coverage.pack, profile, resolution };
 }
 
@@ -50,16 +58,23 @@ export async function validateWithPacks(candidate, coverage) {
 	const { profile } = coverage;
 	const path = candidate.path;
 	try {
-		const units = await discoverUnits(candidate.content, profile);
+		// A pack declares unit discovery when its family has enforceable units;
+		// a header-only pack (TypeScript today) simply declares none.
+		const units = profile.units
+			? await discoverUnits(candidate.content, profile)
+			: [];
 		const decoded = decodeDocument(candidate.content, profile, units);
-		const findings = checkDocumentation(decoded, units);
+		const findings = [
+			...checkDocumentation(decoded, units, profile),
+			...(await checkNaming(candidate.content, profile)),
+		];
 		return findings.map(
 			(finding) => `${path}:${finding.line} [doc-standard] ${finding.message}`,
 		);
 	} catch (error) {
 		if (error instanceof ProviderUnavailableError) {
 			return [
-				`${path}:1 [doc-standard] Language pack '${coverage.pack.manifest.id}' skipped: ${error.message}`,
+				`${path}:1 [doc-standard] Language pack '${coverage.pack.manifest.id}' could not check this file: ${error.message}`,
 			];
 		}
 		throw error;

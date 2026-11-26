@@ -6,22 +6,43 @@
  * @remarks
  * Usage:
  *   Core principle: One language-independent contract; the engine sees decoded fields, never native syntax.
- *   Setup: Feed a decoded document, its discovered units, and the profile.
- *   Workflow: Check required header fields, the optional Usage ground rule, and per-unit documentation.
+ *   Setup: Feed a decoded document, its discovered units, and the profile whose spellings label the findings.
+ *   Workflow: Check the required header field Summary, then the documentation of each discovered unit.
  *   API guide: checkDocumentation returns findings shaped {line, message} for the gate to aggregate.
  *   Worked example: checkDocumentation(decoded, units).length === 0
  */
 
-const REQUIRED_FIELDS = ["author", "summary", "description"];
+// Only the summary is gate-required: authorship is owned by VCS blame, so a
+// per-file Author is optional (the skill explains when to include it).
+const REQUIRED_FIELDS = ["summary"];
+
+/**
+ * Matches the mandatory parameter direction marker: (in), (out), (in-out).
+ */
+const DIRECTION_MARKER = /\((?:in|out|in-out)\)/u;
+
+/**
+ * Renders the label a missing field is reported by: its first declared spelling.
+ *
+ * @param {object | undefined} profile - Loaded profile declaring field spellings, if any.
+ * @param {string} field - Universal field name.
+ * @returns {string} The first accepted spelling, or the universal name when no spelling is declared.
+ */
+function reportLabel(profile, field) {
+	const declared = profile?.codec?.fields?.[field];
+	const first = Array.isArray(declared) ? declared[0] : declared;
+	return typeof first === "string" && first !== "" ? first : field;
+}
 
 /**
  * Checks one decoded document against the universal contract.
  *
  * @param {object} decoded - Decoded documentation from the codec.
  * @param {Array<{name: string, line: number}>} units - Discovered units.
+ * @param {object} [profile] - Loaded profile whose field spellings label missing-field findings.
  * @returns {Array<{line: number, message: string}>} Findings with 1-based lines.
  */
-export function checkDocumentation(decoded, units) {
+export function checkDocumentation(decoded, units, profile) {
 	const findings = [];
 	const headerLine = decoded.header_line || 1;
 	for (const field of REQUIRED_FIELDS) {
@@ -29,25 +50,7 @@ export function checkDocumentation(decoded, units) {
 		if (typeof value !== "string" || value.trim() === "") {
 			findings.push({
 				line: headerLine,
-				message: `Missing '${field}' in file header`,
-			});
-		}
-	}
-	const usage = decoded.header.usage;
-	if (typeof usage === "string" && usage.trim() !== "") {
-		const lowered = usage.toLowerCase();
-		const references = units.some((unit) => {
-			if (lowered.includes(unit.name.toLowerCase())) return true;
-			// Qualified names like "M.add" may be referenced by any name segment.
-			return unit.name
-				.split(/[^A-Za-z0-9_]+/u)
-				.filter((segment) => segment.length >= 2)
-				.some((segment) => lowered.includes(segment.toLowerCase()));
-		});
-		if (units.length > 0 && !references) {
-			findings.push({
-				line: headerLine,
-				message: "Usage must reference at least one unit exposed by this file",
+				message: `Missing '${reportLabel(profile, field)}' in file header`,
 			});
 		}
 	}
@@ -65,6 +68,20 @@ export function checkDocumentation(decoded, units) {
 				line: unit.line,
 				message: `Unit documentation for '${unit.name}' must start with a summary`,
 			});
+		}
+		// A pack that declares a parameters section (the Lua pack's @param)
+		// gets direction markers enforced: every entry must carry (in), (out),
+		// or (in-out), because a parameter without a direction is a contract
+		// gap, not a style choice.
+		if (profile?.units?.sections?.parameters) {
+			for (const entry of doc.sections?.parameters ?? []) {
+				if (!DIRECTION_MARKER.test(entry)) {
+					findings.push({
+						line: unit.line,
+						message: `Parameter entry in '${unit.name}' is missing a direction marker (in|out|in-out): ${entry}`,
+					});
+				}
+			}
 		}
 	}
 	return findings;

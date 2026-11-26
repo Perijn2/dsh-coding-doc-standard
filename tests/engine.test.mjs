@@ -13,6 +13,8 @@
  */
 
 import assert from "node:assert/strict";
+import { existsSync, readdirSync, readFileSync } from "node:fs";
+import { join } from "node:path";
 import test from "node:test";
 import schemastery from "@deepseek-ai/schemastery";
 import {
@@ -107,7 +109,7 @@ test("a multi-sentence brief summary passes the contract", () => {
 	);
 });
 
-test("missing required header fields each produce a named finding", () => {
+test("a missing summary produces a named finding; author is optional", () => {
 	const decoded = {
 		header: {},
 		unit_docs: {},
@@ -115,29 +117,20 @@ test("missing required header fields each produce a named finding", () => {
 		header_line: 1,
 	};
 	const findings = checkDocumentation(decoded, []);
-	const messages = findings.map((finding) => finding.message).join("\n");
-	for (const field of ["author", "summary", "description"])
-		assert.match(messages, new RegExp(field, "i"));
+	assert.equal(findings.length, 1, "only the summary is gate-required");
+	assert.match(findings[0].message, /summary/i);
+	assert.doesNotMatch(findings[0].message, /author/i);
 });
 
-test("usage must reference a discovered unit when present", async () => {
+test("a Usage section carries no checking obligation", async () => {
 	const profile = lua.profiles.get("modern");
 	const content =
-		"--- Author: X\n--- Summary: S.\n--- Description: D.\n--- Usage: Call add.\n\nfunction add() end\n";
+		"--- Author: X\n--- Summary: S.\n--- Usage: Call subtract.\n\nfunction add() end\n";
 	const units = await discoverUnits(content, profile);
 	assert.equal(units.length, 1);
-	const good = decodeDocument(content, profile, units);
-	assert.equal(checkDocumentation(good, units).length, 0);
-	const bad = decodeDocument(
-		"--- Author: X\n--- Summary: S.\n--- Description: D.\n--- Usage: Call subtract.\n\nfunction add() end\n",
-		profile,
-		units,
-	);
-	assert.ok(
-		checkDocumentation(bad, units).some((finding) =>
-			finding.message.includes("Usage"),
-		),
-	);
+	const decoded = decodeDocument(content, profile, units);
+	assert.equal(decoded.header.usage, "Call subtract.");
+	assert.equal(checkDocumentation(decoded, units, profile).length, 0);
 });
 
 test("tree-sitter provider discovers lua functions through the pack query", async () => {
@@ -184,9 +177,9 @@ test("a documented lua candidate passes the gate through its pack", async () => 
 		"local M = {}",
 		"",
 		"--- Adds two integers and writes the sum.",
-		"--- @param left First operand.",
-		"--- @param right Second operand.",
-		"--- @return The integer sum of both operands.",
+		"--- @param left  (in) number: first operand",
+		"--- @param right (in) number: second operand",
+		"--- @return number: the integer sum of both operands",
 		"function M.add(left, right)",
 		"\treturn left + right",
 		"end",
@@ -202,6 +195,30 @@ test("a documented lua candidate passes the gate through its pack", async () => 
 	assert.deepEqual(lines, []);
 });
 
+test("a declared parameter entry without a direction marker is denied", async () => {
+	const coverage = packCoverageFor("example.lua");
+	const lines = await validateWithPacks(
+		{
+			path: "example.lua",
+			content: [
+				"--- Author: Perijn Huijser",
+				"--- Summary: Demonstrates a documented Lua module.",
+				"",
+				"--- Adds two integers.",
+				"--- @param left number: first operand",
+				"--- @param right (in) number: second operand",
+				"function M.add(left, right) return left + right end",
+				"",
+				"return M",
+			].join("\n"),
+		},
+		coverage,
+	);
+	assert.equal(lines.length, 1);
+	assert.match(lines[0], /missing a direction marker/);
+	assert.match(lines[0], /left number: first operand/);
+});
+
 test("an undocumented lua candidate is denied through its pack", async () => {
 	const coverage = packCoverageFor("example.lua");
 	const lines = await validateWithPacks(
@@ -211,11 +228,62 @@ test("an undocumented lua candidate is denied through its pack", async () => {
 		},
 		coverage,
 	);
-	assert.ok(
-		lines.length >= 3,
-		`expected header and unit findings, got: ${lines.join("\n")}`,
-	);
+	// The summary header field and the undocumented unit are the findings;
+	// Author is optional since VCS owns authorship.
+	assert.equal(lines.length, 2, `got: ${lines.join("\n")}`);
 	assert.ok(lines.every((line) => line.includes("[doc-standard]")));
+});
+
+test("python units enforce docstrings while underscore names stay private", async () => {
+	const path = "pkg/widgets.py";
+	const coverage = packCoverageFor(path);
+	const header = '"""Author: Ada Lovelace\nSummary: Counts widgets.\n"""\n';
+	const privateOnly = await validateWithPacks(
+		{ path, content: `${header}\n\ndef _helper():\n    return 1\n` },
+		coverage,
+	);
+	assert.deepEqual(
+		privateOnly,
+		[],
+		"an underscore name is private and needs no document",
+	);
+	const undocumented = await validateWithPacks(
+		{ path, content: `${header}\n\ndef compute():\n    return 2\n` },
+		coverage,
+	);
+	assert.equal(undocumented.length, 1);
+	assert.match(
+		undocumented[0],
+		/Missing unit documentation for 'compute'/u,
+		"a public unit without a docstring is denied",
+	);
+	const documented = await validateWithPacks(
+		{
+			path,
+			content: `${header}\n\ndef compute():\n    """Summary: Doubles the input."""\n    return 2\n`,
+		},
+		coverage,
+	);
+	assert.deepEqual(documented, []);
+});
+
+test("compose services each need a summary comment", async () => {
+	const path = "deploy/compose.yaml";
+	const coverage = packCoverageFor(path);
+	const lines = await validateWithPacks(
+		{
+			path,
+			content:
+				"# Author: Ada Lovelace\n# Summary: Runs the demo stack.\n\nservices:\n  # Summary: Serves the site.\n  web:\n    image: nginx\n  worker:\n    image: nginx\n",
+		},
+		coverage,
+	);
+	assert.equal(lines.length, 1, lines.join("\n"));
+	assert.match(
+		lines[0],
+		/Missing unit documentation for 'worker'/u,
+		"a service without a summary comment is denied",
+	);
 });
 
 test("profile resolution prefers pins over detection over defaults", () => {
@@ -247,21 +315,21 @@ test("a pack without a formatter runs no formatting pass", async () => {
 	);
 });
 
-test("formatter-only packs own formatting without the documentation path", () => {
+test("formatter-only packs with a codec own the file header", () => {
 	const python = registry.packs.get("python");
 	assert.ok(python, "the python formatter pack registers");
 	const profile = python.profiles.get("modern");
 	assert.equal(profile.formatterOnly, true);
+	const coverage = packCoverageFor("example.py");
 	assert.equal(
-		packCoverageFor("example.py"),
-		null,
-		"formatter-only packs must not own documentation",
+		coverage?.profile.codec.headerSyntax,
+		"docstring",
+		"a codec declaration gives the formatter pack header coverage",
 	);
 	assert.ok(registry.packs.get("docker-compose"));
-	assert.equal(
+	assert.ok(
 		packCoverageFor("compose.yaml"),
-		null,
-		"filename-matched formatter packs must not own documentation",
+		"filename-matched packs gain header coverage through their codec",
 	);
 });
 
@@ -319,4 +387,121 @@ test("unit doc decoding extracts summary and sections", () => {
 	assert.equal(doc.summary, "Adds two integers.");
 	assert.equal(doc.sections.parameters.length, 2);
 	assert.equal(doc.sections.returns[0], "The sum.");
+});
+
+const pythonProfile = registry.packs.get("python").profiles.get("modern");
+const tsProfile = registry.packs
+	.get("typescript-javascript")
+	.profiles.get("modern");
+
+test("block syntax decodes tagged and unlabeled header prose", () => {
+	const content = [
+		"/**",
+		" * @module hidden",
+		" * @author Ada Lovelace",
+		" * Reads manifests without opening them.",
+		" *",
+		" * @remarks",
+		" * Grammar is pack data; the engine never learns a language.",
+		" */",
+		"export const value = 1;",
+	].join("\n");
+	const decoded = decodeDocument(content, tsProfile);
+	assert.equal(decoded.header_present, true);
+	assert.equal(decoded.header.author, "Ada Lovelace");
+	assert.ok(decoded.header.summary.startsWith("Reads manifests"));
+});
+
+test("unknown tags decode as no content and plain prose routes to the declared field", () => {
+	const decoded = decodeDocument(
+		"/**\n * @module hidden\n * @author Ada Lovelace\n * Reads manifests.\n */\n",
+		tsProfile,
+	);
+	assert.equal(decoded.header.summary, "Reads manifests.");
+});
+
+test("an unterminated block header is no header at all", () => {
+	const decoded = decodeDocument(
+		"/**\n * @author Ada Lovelace\n * Summary: S.\n",
+		tsProfile,
+	);
+	assert.equal(decoded.header_present, false);
+});
+
+test("docstring syntax decodes labeled fields behind prefixes and comments", () => {
+	const plain = decodeDocument(
+		'"""Author: Ada Lovelace\nSummary: Sums numbers.\n"""\nVALUE = 1\n',
+		pythonProfile,
+	);
+	assert.equal(plain.header.author, "Ada Lovelace");
+	assert.equal(plain.header.summary, "Sums numbers.");
+	const rawForm = decodeDocument(
+		"r'''Author: Ada Lovelace\nSummary: Reads raw text.\n'''\nVALUE = 1\n",
+		pythonProfile,
+	);
+	assert.equal(rawForm.header.summary, "Reads raw text.");
+	const afterEncoding = decodeDocument(
+		'#!/usr/bin/env python\n# -*- coding: utf-8 -*-\n"""Author: Ada Lovelace\nSummary: Declares an encoding.\n"""\nVALUE = 1\n',
+		pythonProfile,
+	);
+	assert.equal(afterEncoding.header.summary, "Declares an encoding.");
+});
+
+test("the required summary is reported by its first declared spelling", () => {
+	const empty = {
+		header: {},
+		unit_docs: {},
+		header_present: false,
+		header_line: 1,
+	};
+	const tsMessages = checkDocumentation(empty, [], tsProfile).map(
+		(finding) => finding.message,
+	);
+	assert.deepEqual(tsMessages, ["Missing 'Summary:' in file header"]);
+	const pythonMessages = checkDocumentation(empty, [], pythonProfile).map(
+		(finding) => finding.message,
+	);
+	assert.deepEqual(pythonMessages, ["Missing 'Summary:' in file header"]);
+});
+
+test("an alternate declared spelling satisfies a field", () => {
+	const decoded = decodeDocument(
+		"/**\n * Author: Ada Lovelace\n * Summary: Reads prose forms.\n */\n",
+		tsProfile,
+	);
+	assert.equal(decoded.header.author, "Ada Lovelace");
+	assert.equal(checkDocumentation(decoded, [], tsProfile).length, 0);
+});
+
+test("every pack decodes its own golden example without findings", async () => {
+	for (const pack of registry.packs.values()) {
+		const profile = pack.profiles.get(pack.defaultProfile);
+		assert.ok(
+			profile.codec,
+			`${pack.manifest.id} must declare the doc syntax it teaches`,
+		);
+		const skillDirectory = join(pack.directory, "skill");
+		const examples = existsSync(skillDirectory)
+			? readdirSync(skillDirectory).filter((name) =>
+					name.toLowerCase().startsWith("example."),
+				)
+			: [];
+		assert.ok(
+			examples.length > 0,
+			`${pack.manifest.id} must ship skill/example.* as its golden header`,
+		);
+		for (const name of examples) {
+			const content = readFileSync(join(skillDirectory, name), "utf8");
+			const units = profile.units ? await discoverUnits(content, profile) : [];
+			assert.deepEqual(
+				checkDocumentation(
+					decodeDocument(content, profile, units),
+					units,
+					profile,
+				),
+				[],
+				`${pack.manifest.id}/${name} must satisfy its own standard`,
+			);
+		}
+	}
 });

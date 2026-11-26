@@ -13,9 +13,15 @@
  */
 
 import { existsSync, readdirSync, readFileSync } from "node:fs";
-import { dirname, extname, join } from "node:path";
+import { basename, dirname, extname, join } from "node:path";
 import { fileURLToPath } from "node:url";
+import { filenameMatches } from "./formatters.mjs";
 
+/**
+ * Absolute path of the installed language packs root.
+ *
+ * @type {string}
+ */
 export const packsRoot = join(
 	dirname(dirname(dirname(fileURLToPath(import.meta.url)))),
 	"languages",
@@ -70,6 +76,69 @@ function readJsonOrNull(path) {
 }
 
 /**
+ * Validates the header syntax tokens a codec declaration carries.
+ *
+ * Line syntax names a line token; block and docstring syntax name open and
+ * close tokens. Field spellings are validated by the calling branch.
+ *
+ * @param {object} profile - Parsed profile document.
+ * @param {string} path - Profile file path for error messages.
+ * @returns {string | null} Validation error, or null when the codec declaration is valid.
+ */
+function validateCodec(profile, path) {
+	const codec = profile.codec;
+	if (
+		typeof codec.headerSyntax !== "string" ||
+		!HEADER_SYNTAXES.has(codec.headerSyntax)
+	)
+		return `${path} declares an unsupported header syntax`;
+	if (codec.headerSyntax === "line") {
+		if (typeof codec.headerToken !== "string" || codec.headerToken === "")
+			return `${path} declares no header token`;
+		return null;
+	}
+	if (typeof codec.headerOpen !== "string" || codec.headerOpen === "")
+		return `${path} declares no header open token`;
+	if (typeof codec.headerClose !== "string" || codec.headerClose === "")
+		return `${path} declares no header close token`;
+	return null;
+}
+
+/**
+ * Validates the formatter declaration any profile may carry, returning an
+ * error string or null. A formatter-only profile requires one; a full
+ * profile's formatter is optional but validated when present.
+ *
+ * @param {object} formatter - Parsed formatter declaration.
+ * @param {string} path - Profile file path for error messages.
+ * @returns {string | null} Validation error, or null when valid.
+ */
+function validateFormatter(formatter, path) {
+	if (!formatter || typeof formatter !== "object")
+		return `${path} declares no valid formatter`;
+	if (!FORMATTER_ADAPTERS.has(formatter.adapter))
+		return `${path} declares an unsupported formatter adapter`;
+	const dependency = formatter.dependency;
+	if (
+		!dependency ||
+		typeof dependency !== "object" ||
+		!DEPENDENCY_SOURCES.has(dependency.source)
+	)
+		return `${path} declares an unsupported formatter dependency source`;
+	if (
+		formatter.settingsKey !== undefined &&
+		typeof formatter.settingsKey !== "string"
+	)
+		return `${path} declares an invalid formatter settings key`;
+	if (
+		formatter.unavailableHint !== undefined &&
+		typeof formatter.unavailableHint !== "string"
+	)
+		return `${path} declares an invalid formatter unavailable hint`;
+	return null;
+}
+
+/**
  * Validates one profile declaration, returning an error string or null.
  *
  * @param {object} profile - Parsed profile document.
@@ -86,6 +155,11 @@ function validateProfile(profile, path) {
 		profile.languageVersions === ""
 	)
 		return `${path} declares no language version range`;
+	if (
+		profile.policyLanguage !== undefined &&
+		typeof profile.policyLanguage !== "string"
+	)
+		return `${path} declares an invalid policy language key`;
 	if (!Array.isArray(profile.extensions) && !Array.isArray(profile.filenames))
 		return `${path} declares no extensions or filenames`;
 	if (
@@ -97,43 +171,42 @@ function validateProfile(profile, path) {
 	// A formatter-only profile carries no documentation rules yet (migration
 	// path for the formatter adapter layer): codec and units are optional.
 	if (profile.formatterOnly === true) {
-		const formatter = profile.formatter;
-		if (!formatter || typeof formatter !== "object")
+		if (!profile.formatter || typeof profile.formatter !== "object")
 			return `${path} is formatter-only but declares no formatter`;
-		if (!FORMATTER_ADAPTERS.has(formatter.adapter))
-			return `${path} declares an unsupported formatter adapter`;
-		const dependency = formatter.dependency;
-		if (
-			!dependency ||
-			typeof dependency !== "object" ||
-			!DEPENDENCY_SOURCES.has(dependency.source)
-		)
-			return `${path} declares an unsupported formatter dependency source`;
-		if (
-			formatter.settingsKey !== undefined &&
-			typeof formatter.settingsKey !== "string"
-		)
-			return `${path} declares an invalid formatter settings key`;
+		const formatterError = validateFormatter(profile.formatter, path);
+		if (formatterError) return formatterError;
+		// A formatter-only profile may still declare the codec that gives it
+		// header coverage and the unit discovery that gives it full coverage.
+		if (profile.codec !== undefined) {
+			const codecError = validateCodec(profile, path);
+			if (codecError) return codecError;
+			if (!profile.codec.fields || typeof profile.codec.fields !== "object")
+				return `${path} declares no field spellings`;
+		}
+		if (profile.units !== undefined) {
+			if (!profile.units || typeof profile.units !== "object")
+				return `${path} declares invalid unit discovery`;
+			if (!UNIT_PROVIDERS.has(profile.units.provider))
+				return `${path} declares an unsupported unit provider`;
+		}
 		return null;
 	}
 	if (!profile.codec || typeof profile.codec !== "object")
 		return `${path} declares no codec`;
-	if (
-		typeof profile.codec.headerSyntax !== "string" ||
-		!HEADER_SYNTAXES.has(profile.codec.headerSyntax)
-	)
-		return `${path} declares an unsupported header syntax`;
-	if (
-		typeof profile.codec.headerToken !== "string" ||
-		profile.codec.headerToken === ""
-	)
-		return `${path} declares no header token`;
+	const fullCodecError = validateCodec(profile, path);
+	if (fullCodecError) return fullCodecError;
 	if (!profile.codec.fields || typeof profile.codec.fields !== "object")
 		return `${path} declares no field spellings`;
 	if (!profile.units || typeof profile.units !== "object")
 		return `${path} declares no unit discovery`;
 	if (!UNIT_PROVIDERS.has(profile.units.provider))
 		return `${path} declares an unsupported unit provider`;
+	// A full profile may still declare a formatter (the Rust pack's
+	// project-toolchain rustfmt is declared next to its codec and units).
+	if (profile.formatter !== undefined) {
+		const formatterError = validateFormatter(profile.formatter, path);
+		if (formatterError) return formatterError;
+	}
 	return null;
 }
 
@@ -242,12 +315,19 @@ export function getRegistry(options = {}) {
  */
 export function packForPath(path, registry = getRegistry()) {
 	const extension = extname(path).toLowerCase();
+	const base = basename(path).toLowerCase();
 	for (const pack of registry.packs.values()) {
 		for (const profile of pack.profiles.values()) {
-			// Formatter-only profiles own formatting, not the documentation path.
-			if (profile.formatterOnly === true) continue;
-			if (profile.extensions.some((value) => value.toLowerCase() === extension))
-				return { pack, profile };
+			// A formatter-only profile without a codec owns formatting only; one
+			// declaring a codec covers the file header for this path.
+			if (profile.formatterOnly === true && !profile.codec) continue;
+			const byExtension = profile.extensions?.some(
+				(value) => value.toLowerCase() === extension,
+			);
+			const byFilename = profile.filenames?.some((value) =>
+				filenameMatches(base, value),
+			);
+			if (byExtension || byFilename) return { pack, profile };
 		}
 	}
 	return null;

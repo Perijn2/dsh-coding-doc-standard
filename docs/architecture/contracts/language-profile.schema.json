@@ -1,184 +1,220 @@
 {
-  "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "$id": "https://dsh.dev/rs/schema/language-profile.json",
-  "title": "Language profile",
-  "description": "One version-scoped ruleset of a language pack: codec, unit discovery, and formatter declarations.",
-  "type": "object",
-  "additionalProperties": false,
-  "required": [
-    "profile"
-  ],
-  "properties": {
-    "profile": {
-      "type": "object",
-      "additionalProperties": true,
-      "properties": {
-        "id": {
-          "type": "string",
-          "pattern": "^[a-z][a-z0-9-]*$"
-        },
-        "language_versions": {
-          "type": "string",
-          "pattern": "^\\S+$"
-        },
-        "extensions": {
-          "type": "array",
-          "items": {
-            "type": "string"
-          }
-        },
-        "preamble": {
-          "type": "object",
-          "additionalProperties": true,
-          "properties": {
-            "shebang": {
-              "type": "boolean"
-            },
-            "patterns": {
-              "type": "array",
-              "items": {
-                "type": "string"
-              }
-            }
-          }
-        },
-        "codec": {
-          "type": "object",
-          "additionalProperties": true,
-          "properties": {
-            "header_syntax": {
-              "type": "string"
-            },
-            "header_token": {
-              "type": "string"
-            },
-            "fields": {
-              "type": "object",
-              "additionalProperties": true
-            }
-          }
-        },
-        "units": {
-          "type": "object",
-          "additionalProperties": true,
-          "properties": {
-            "provider": {
-              "type": "string",
-              "enum": [
-                "external-command",
-                "npm",
-                "regex",
-                "tree-sitter"
-              ]
-            },
-            "grammar": {
-              "type": "string"
-            },
-            "query": {
-              "type": "string"
-            },
-            "package": {
-              "type": "string"
-            },
-            "command": {
-              "type": "string"
-            }
-          },
-          "required": [
-            "provider"
-          ]
-        },
-        "formatter": {
-          "type": "object",
-          "additionalProperties": true,
-          "properties": {
-            "tool": {
-              "type": "string"
-            },
-            "version": {
-              "type": "string"
-            },
-            "optional": {
-              "type": "boolean"
-            },
-            "adapter": {
-              "type": "string",
-              "enum": [
-                "external-command",
-                "npm-function",
-                "stdin-binary"
-              ]
-            },
-            "bin": {
-              "type": "string"
-            },
-            "entry": {
-              "type": "string"
-            },
-            "args": {
-              "type": "array",
-              "items": {
-                "type": "string"
-              }
-            }
-          }
-        }
-      },
-      "required": [
-        "codec",
-        "extensions",
-        "id",
-        "language_versions",
-        "units"
-      ]
-    }
-  },
-  "x-governed": {
-    "requirements": [
-      "REQ-010",
-      "REQ-011",
-      "REQ-018"
-    ],
-    "adrs": [
-      "ADR-0003",
-      "ADR-0004",
-      "ADR-0005"
-    ]
-  },
-  "x-authored": {
-    "statements": [
-      "object profile",
-      "string profile.id pattern ^[a-z][a-z0-9-]*$",
-      "string profile.language_versions pattern ^\\S+$",
-      "array profile.extensions of string",
-      "object profile.preamble",
-      "boolean profile.preamble.shebang",
-      "array profile.preamble.patterns of string",
-      "object profile.codec",
-      "string profile.codec.header_syntax",
-      "string profile.codec.header_token",
-      "object profile.codec.fields",
-      "object profile.units",
-      "enum profile.units.provider external-command|npm|regex|tree-sitter",
-      "string profile.units.grammar",
-      "string profile.units.query",
-      "string profile.units.package",
-      "string profile.units.command",
-      "object profile.formatter",
-      "string profile.formatter.tool",
-      "string profile.formatter.version",
-      "boolean profile.formatter.optional",
-      "required profile",
-      "required profile.id",
-      "required profile.language_versions",
-      "required profile.extensions",
-      "required profile.codec",
-      "required profile.units",
-      "required profile.units.provider",
-      "enum profile.formatter.adapter external-command|npm-function|stdin-binary",
-      "string profile.formatter.bin",
-      "string profile.formatter.entry",
-      "array profile.formatter.args of string"
-    ]
-  }
+	"$schema": "https://json-schema.org/draft/2020-12/schema",
+	"$id": "https://dsh.dev/rs/schema/language-profile.json",
+	"title": "Language profile",
+	"description": "One version-scoped ruleset of a language pack: codec, unit discovery, and formatter declarations.",
+	"type": "object",
+	"additionalProperties": false,
+	"required": ["profile"],
+	"properties": {
+		"profile": {
+			"type": "object",
+			"additionalProperties": true,
+			"properties": {
+				"id": {
+					"type": "string",
+					"pattern": "^[a-z][a-z0-9-]*$"
+				},
+				"language_versions": {
+					"type": "string",
+					"pattern": "^\\S+$"
+				},
+				"extensions": {
+					"type": "array",
+					"items": {
+						"type": "string"
+					}
+				},
+				"preamble": {
+					"type": "object",
+					"additionalProperties": true,
+					"properties": {
+						"shebang": {
+							"type": "boolean"
+						},
+						"patterns": {
+							"type": "array",
+							"items": {
+								"type": "string"
+							}
+						}
+					}
+				},
+				"codec": {
+					"type": "object",
+					"additionalProperties": true,
+					"properties": {
+						"header_syntax": {
+							"type": "string"
+						},
+						"header_token": {
+							"type": "string"
+						},
+						"fields": {
+							"type": "object",
+							"additionalProperties": true
+						},
+						"header_open": {
+							"type": "string"
+						},
+						"header_close": {
+							"type": "string"
+						},
+						"continuation": {
+							"type": "string"
+						},
+						"tag_sigil": {
+							"type": "string"
+						},
+						"unlabeled": {
+							"type": "string"
+						}
+					}
+				},
+				"units": {
+					"type": "object",
+					"additionalProperties": true,
+					"properties": {
+						"provider": {
+							"type": "string",
+							"enum": ["external-command", "npm", "regex", "tree-sitter"]
+						},
+						"grammar": {
+							"type": "string"
+						},
+						"query": {
+							"type": "string"
+						},
+						"package": {
+							"type": "string"
+						},
+						"command": {
+							"type": "string"
+						}
+					},
+					"required": ["provider"]
+				},
+				"naming": {
+					"type": "object",
+					"description": "Optional source-backed declaration casing checks; no renaming.",
+					"required": ["source", "grammar", "rules"],
+					"properties": {
+						"source": { "type": "string", "format": "uri" },
+						"grammar": { "type": "string" },
+						"rules": {
+							"type": "array",
+							"items": {
+								"type": "object",
+								"required": ["query", "style"],
+								"properties": {
+									"query": {
+										"type": "string",
+										"description": "Inline Tree-sitter query capturing @name; @exclude exempts a match."
+									},
+									"style": {
+										"enum": [
+											"snake_case",
+											"UpperCamelCase",
+											"lowerCamelCase",
+											"SCREAMING_SNAKE_CASE",
+											"MixedCaps",
+											"lowercase"
+										]
+									},
+									"label": { "type": "string" },
+									"excludeNamePattern": { "type": "string" },
+									"excludeQuery": {
+										"type": "string",
+										"description": "Inline query capturing exempt @name nodes for this rule."
+									},
+									"skipAncestors": {
+										"type": "array",
+										"items": { "type": "string" }
+									}
+								}
+							}
+						}
+					}
+				},
+				"formatter": {
+					"type": "object",
+					"additionalProperties": true,
+					"properties": {
+						"tool": {
+							"type": "string"
+						},
+						"version": {
+							"type": "string"
+						},
+						"optional": {
+							"type": "boolean"
+						},
+						"adapter": {
+							"type": "string",
+							"enum": ["external-command", "npm-function", "stdin-binary"]
+						},
+						"bin": {
+							"type": "string"
+						},
+						"entry": {
+							"type": "string"
+						},
+						"args": {
+							"type": "array",
+							"items": {
+								"type": "string"
+							}
+						}
+					}
+				}
+			},
+			"required": ["codec", "extensions", "id", "language_versions", "units"]
+		}
+	},
+	"x-governed": {
+		"requirements": ["REQ-010", "REQ-011", "REQ-018"],
+		"adrs": ["ADR-0003", "ADR-0004", "ADR-0005"]
+	},
+	"x-authored": {
+		"statements": [
+			"object profile",
+			"string profile.id pattern ^[a-z][a-z0-9-]*$",
+			"string profile.language_versions pattern ^\\S+$",
+			"array profile.extensions of string",
+			"object profile.preamble",
+			"boolean profile.preamble.shebang",
+			"array profile.preamble.patterns of string",
+			"object profile.codec",
+			"string profile.codec.header_syntax",
+			"string profile.codec.header_token",
+			"object profile.codec.fields",
+			"object profile.units",
+			"enum profile.units.provider external-command|npm|regex|tree-sitter",
+			"string profile.units.grammar",
+			"string profile.units.query",
+			"string profile.units.package",
+			"string profile.units.command",
+			"object profile.formatter",
+			"string profile.formatter.tool",
+			"string profile.formatter.version",
+			"boolean profile.formatter.optional",
+			"required profile",
+			"required profile.id",
+			"required profile.language_versions",
+			"required profile.extensions",
+			"required profile.codec",
+			"required profile.units",
+			"required profile.units.provider",
+			"enum profile.formatter.adapter external-command|npm-function|stdin-binary",
+			"string profile.formatter.bin",
+			"string profile.formatter.entry",
+			"array profile.formatter.args of string",
+			"string profile.codec.header_open",
+			"string profile.codec.header_close",
+			"string profile.codec.continuation",
+			"string profile.codec.tag_sigil",
+			"string profile.codec.unlabeled",
+			"string profile.policy_language"
+		]
+	}
 }

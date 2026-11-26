@@ -38,18 +38,28 @@ const IDENTIFIER_TYPES = new Set([
 	"simple_identifier",
 	"type_identifier",
 	"property_identifier",
+	"scalar",
+	"string_scalar",
 ]);
 
 let parserInit = null;
 const languageCache = new Map();
 
 /**
- * Loads and caches one tree-sitter grammar language.
+ * Load and cache one Tree-sitter grammar for unit and naming checks.
  *
- * @param {string} grammar - Grammar name, for example "lua".
- * @returns {Promise<object>} The loaded language.
+ * @param {string} grammar (in) - Installed grammar name, for example "lua".
+ *
+ * @returns {Promise<object>} The shared loaded language; callers must not delete it.
+ * @throws {Error} When parser initialization or grammar loading fails. Grammar
+ * load failures are not cached; parser initialization is shared across calls.
+ *
+ * @example
+ * ```js
+ * await loadGrammar("rust") === await loadGrammar("rust"); // true
+ * ```
  */
-async function loadGrammar(grammar) {
+export async function loadGrammar(grammar) {
 	parserInit ??= Parser.init();
 	await parserInit;
 	if (!languageCache.has(grammar)) {
@@ -175,14 +185,25 @@ async function discoverWithRegex(content, profile) {
  * @throws {ProviderUnavailableError} When the declared provider cannot run.
  */
 export async function discoverUnits(content, profile) {
+	let units;
 	switch (profile.units.provider) {
 		case "tree-sitter":
-			return discoverWithTreeSitter(content, profile);
+			units = await discoverWithTreeSitter(content, profile);
+			break;
 		case "regex":
-			return discoverWithRegex(content, profile);
+			units = await discoverWithRegex(content, profile);
+			break;
 		default:
 			throw new ProviderUnavailableError(
 				`provider ${profile.units.provider} is not available in this build`,
 			);
 	}
+	// A profile may exclude discovered names, such as Python's underscore
+	// convention for private definitions, without the query needing predicates.
+	const exclude = profile.units.excludeNamePattern;
+	if (typeof exclude === "string" && exclude !== "") {
+		const expression = new RegExp(exclude, "u");
+		units = units.filter((unit) => !expression.test(unit.name));
+	}
+	return units;
 }
