@@ -1,0 +1,58 @@
+{
+	"id": "modern",
+	"languageVersions": ">=0",
+	"policyLanguage": "php",
+	"extensions": [".php"],
+	"preamble": {
+		"patterns": ["^<\\?php[ \\t]*\\r?\\n"]
+	},
+	"codec": {
+		"headerSyntax": "block",
+		"headerOpen": "/**",
+		"headerClose": "*/",
+		"continuation": "*",
+		"tagSigil": "@",
+		"unlabeled": "summary",
+		"fields": {
+			"author": ["@author", "Author:"],
+			"summary": ["Summary:"],
+			"description": ["Description:"],
+			"usage": ["Usage:"],
+			"changelog": ["Changelog:"],
+			"notes": ["Notes:"]
+		}
+	},
+	"units": {
+		"provider": "tree-sitter",
+		"grammar": "php",
+		"query": "queries/units.scm",
+		"docBinding": {
+			"syntax": "block",
+			"open": "/**",
+			"close": "*/",
+			"continuation": "*"
+		}
+	},
+	"naming": {
+		"source": "https://www.php-fig.org/psr/psr-1/",
+		"grammar": "php",
+		"rules": [
+			{
+				"query": "[(class_declaration name: (_) @name) (interface_declaration name: (_) @name) (trait_declaration name: (_) @name)]",
+				"style": "UpperCamelCase",
+				"label": "class, interface or trait"
+			},
+			{
+				"query": "(method_declaration name: (_) @name)",
+				"style": "lowerCamelCase",
+				"label": "method",
+				"excludeNamePattern": "^__"
+			},
+			{
+				"query": "[(class_declaration body: (declaration_list (const_declaration (const_element (name) @name)))) (interface_declaration body: (declaration_list (const_declaration (const_element (name) @name)))) (trait_declaration body: (declaration_list (const_declaration (const_element (name) @name))))]",
+				"style": "SCREAMING_SNAKE_CASE",
+				"label": "class constant"
+			}
+		]
+	}
+}

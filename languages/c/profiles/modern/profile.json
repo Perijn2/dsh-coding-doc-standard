@@ -1,0 +1,30 @@
+{
+	"id": "modern",
+	"languageVersions": ">=0",
+	"policyLanguage": "cCpp",
+	"extensions": [".c", ".h"],
+	"codec": {
+		"headerSyntax": "block",
+		"headerOpen": "/**",
+		"headerClose": "*/",
+		"continuation": "*",
+		"fields": {
+			"author": "@author",
+			"summary": "@brief",
+			"description": "@details",
+			"changelog": "@changelog",
+			"notes": "@note"
+		}
+	},
+	"units": {
+		"provider": "tree-sitter",
+		"grammar": "c",
+		"query": "queries/units.scm",
+		"docBinding": {
+			"syntax": "block",
+			"open": "/**",
+			"close": "*/",
+			"continuation": "*"
+		}
+	}
+}

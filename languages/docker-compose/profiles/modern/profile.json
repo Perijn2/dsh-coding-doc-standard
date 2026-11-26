@@ -1,0 +1,52 @@
+{
+	"id": "modern",
+	"languageVersions": "*",
+	"policyLanguage": "dockerCompose",
+	"extensions": [],
+	"filenames": [
+		"compose.yaml",
+		"compose.yml",
+		"docker-compose.yaml",
+		"docker-compose.yml",
+		"compose.*.yaml",
+		"compose.*.yml"
+	],
+	"formatterOnly": true,
+	"formatter": {
+		"adapter": "stdin-binary",
+		"checkMode": "stdout-diff",
+		"label": "prettier 3.9.6",
+		"settingsKey": "formatDockerCompose",
+		"dependency": {
+			"provider": "npm",
+			"source": "plugin-node-modules",
+			"package": "prettier",
+			"version": "3.9.6",
+			"bin": "prettier"
+		},
+		"args": ["--stdin-filepath", "{path}"],
+		"cleanExit": [0],
+		"diagnostics": "stderr"
+	},
+	"codec": {
+		"headerSyntax": "line",
+		"headerToken": "#",
+		"fields": {
+			"author": "Author:",
+			"summary": "Summary:",
+			"description": "Description:",
+			"usage": "Usage:",
+			"changelog": "Changelog:",
+			"notes": "Notes:"
+		}
+	},
+	"units": {
+		"provider": "tree-sitter",
+		"grammar": "yaml",
+		"query": "queries/units.scm",
+		"docBinding": {
+			"syntax": "line",
+			"token": "#"
+		}
+	}
+}

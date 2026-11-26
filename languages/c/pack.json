@@ -1,0 +1,17 @@
+{
+	"id": "c",
+	"label": "C",
+	"packVersion": "1.0.0",
+	"language": {
+		"name": "C",
+		"defaultProfile": "modern"
+	},
+	"profiles": ["modern"],
+	"dependencies": {
+		"units": {
+			"provider": "tree-sitter",
+			"grammar": "c",
+			"query": "queries/units.scm"
+		}
+	}
+}

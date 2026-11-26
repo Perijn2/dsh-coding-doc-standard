@@ -1,0 +1,60 @@
+{
+	"id": "modern",
+	"languageVersions": ">=0",
+	"policyLanguage": "java",
+	"extensions": [".java"],
+	"codec": {
+		"headerSyntax": "block",
+		"headerOpen": "/**",
+		"headerClose": "*/",
+		"continuation": "*",
+		"tagSigil": "@",
+		"unlabeled": "summary",
+		"fields": {
+			"author": ["@author", "Author:"],
+			"summary": ["Summary:"],
+			"description": ["Description:"],
+			"usage": ["Usage:"],
+			"changelog": ["Changelog:"],
+			"notes": ["Notes:"]
+		}
+	},
+	"units": {
+		"provider": "tree-sitter",
+		"grammar": "java",
+		"query": "queries/units.scm",
+		"docBinding": {
+			"syntax": "block",
+			"open": "/**",
+			"close": "*/",
+			"continuation": "*"
+		}
+	},
+	"naming": {
+		"source": "https://www.oracle.com/java/technologies/javase/codeconventions-namingconventions.html",
+		"grammar": "java",
+		"rules": [
+			{
+				"query": "[(class_declaration name: (_) @name) (interface_declaration name: (_) @name) (enum_declaration name: (_) @name) (record_declaration name: (_) @name)]",
+				"style": "UpperCamelCase",
+				"label": "type"
+			},
+			{
+				"query": "(method_declaration name: (_) @name)",
+				"style": "lowerCamelCase",
+				"label": "method",
+				"excludeQuery": "((method_declaration (modifiers (marker_annotation name: (_) @annotation)) name: (_) @name) (#eq? @annotation \"Override\"))"
+			},
+			{
+				"query": "(enum_constant name: (_) @name)",
+				"style": "SCREAMING_SNAKE_CASE",
+				"label": "enum constant"
+			},
+			{
+				"query": "((field_declaration (modifiers) @modifiers (variable_declarator name: (_) @name)) (#match? @modifiers \"(^|[^a-zA-Z_])static([^a-zA-Z_]|$)\") (#match? @modifiers \"(^|[^a-zA-Z_])final([^a-zA-Z_]|$)\"))",
+				"style": "SCREAMING_SNAKE_CASE",
+				"label": "static final field"
+			}
+		]
+	}
+}

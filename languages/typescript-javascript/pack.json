@@ -1,0 +1,11 @@
+{
+	"id": "typescript-javascript",
+	"label": "TypeScript / JavaScript",
+	"packVersion": "1.0.0",
+	"language": {
+		"name": "TypeScript / JavaScript",
+		"defaultProfile": "modern"
+	},
+	"profiles": ["modern"],
+	"dependencies": {}
+}

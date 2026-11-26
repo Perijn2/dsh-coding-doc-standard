@@ -1,4 +1,4 @@
-﻿/**
+/**
  * @module managed-formatter-command
  * @author Perijn Huijser
  * Resolves and runs package-managed formatters for the DSH slash command.
@@ -18,7 +18,7 @@
 import { spawn } from "node:child_process";
 import { existsSync, readFileSync } from "node:fs";
 import { homedir } from "node:os";
-import { dirname, join } from "node:path";
+import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
 const packageRoot = dirname(dirname(dirname(fileURLToPath(import.meta.url))));
@@ -180,6 +180,7 @@ function invocationFor(request) {
 						program,
 						...(biome ? ["format", "--stdin-file-path"] : ["--stdin-filepath"]),
 						request.file,
+						...(biome ? ["--vcs-enabled=false"] : []),
 						...formatterArgs,
 					],
 		label: biome ? profiles.biome.label : profiles.prettier.label,
@@ -193,6 +194,30 @@ function renderedCommand(invocation) {
 	return [invocation.program, ...args]
 		.map((value) => (/\s|["']/u.test(value) ? JSON.stringify(value) : value))
 		.join(" ");
+}
+
+/**
+ * Finds an existing working directory for a formatter run on one target.
+ *
+ * Biome infers a project root from its working directory, so a formatter
+ * belongs beside the file it formats rather than wherever the caller
+ * happens to sit. A candidate can also live in a directory that does not
+ * exist yet, so the nearest existing ancestor is used instead of a
+ * directory the process could not start in.
+ *
+ * @param {string} targetPath - Target file path, absolute or relative.
+ * @param {string} fallbackCwd - Directory used when no ancestor exists.
+ * @returns {string} Existing directory a formatter can run in.
+ */
+export function formatterWorkingDirectory(targetPath, fallbackCwd) {
+	let dir = dirname(targetPath);
+	for (;;) {
+		if (existsSync(dir)) return dir;
+		const parent = dirname(dir);
+		if (parent === dir) break;
+		dir = parent;
+	}
+	return existsSync(fallbackCwd) ? fallbackCwd : process.cwd();
 }
 
 /**
@@ -215,6 +240,14 @@ export async function runFormatterCommand(rawInput, cwd, signal) {
 		};
 	}
 	const invocation = invocationFor(request);
+	// A standard-input format runs beside the target file so the formatter
+	// resolves the same project root for the file and for itself; Biome
+	// otherwise reports a nested root configuration when the invoking
+	// workspace and the target file belong to different projects.
+	const spawnCwd =
+		request.content === null
+			? cwd
+			: formatterWorkingDirectory(resolve(cwd, request.file), cwd);
 	const command = renderedCommand(invocation);
 	if (!existsSync(invocation.program)) {
 		return {
@@ -229,7 +262,7 @@ export async function runFormatterCommand(rawInput, cwd, signal) {
 	}
 	return new Promise((resolve) => {
 		const child = spawn(invocation.command, invocation.args, {
-			cwd,
+			cwd: spawnCwd,
 			stdio: [request.content === null ? "ignore" : "pipe", "pipe", "pipe"],
 			windowsHide: true,
 		});
@@ -238,14 +271,24 @@ export async function runFormatterCommand(rawInput, cwd, signal) {
 		child.stdout.setEncoding("utf8");
 		child.stderr.setEncoding("utf8");
 		child.stdout.on("data", (chunk) => {
-			stdout = `${stdout}${chunk}`.slice(
-				request.content === null ? -8000 : -200000,
-			);
+			// In pending-content mode stdout is the formatted file itself: a
+			// cap there silently truncates large files, so it accumulates in
+			// full. A file-mode run only needs the tail of the report.
+			stdout =
+				request.content === null
+					? `${stdout}${chunk}`.slice(-8000)
+					: stdout + chunk;
 		});
 		child.stderr.on("data", (chunk) => {
 			stderr = `${stderr}${chunk}`.slice(-8000);
 		});
-		if (request.content !== null) child.stdin.end(request.content);
+		if (request.content !== null) {
+			// A formatter that exits before draining a large pending file fails
+			// the write on the stream itself; without this listener that
+			// unhandled 'error' event takes the whole host process down.
+			child.stdin.on("error", () => {});
+			child.stdin.end(request.content);
+		}
 		const abort = () => child.kill();
 		signal.addEventListener("abort", abort, { once: true });
 		child.once("error", (error) => {

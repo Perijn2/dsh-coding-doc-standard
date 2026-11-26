@@ -1,0 +1,74 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://dsh.dev/rs/schema/gate-decision.json",
+  "title": "Gate decision",
+  "description": "One aggregated enforcement decision for a pending write or edit.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "decision"
+  ],
+  "properties": {
+    "decision": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "action": {
+          "type": "string",
+          "enum": [
+            "allow",
+            "deny",
+            "skip",
+            "warn"
+          ]
+        },
+        "path": {
+          "type": "string"
+        },
+        "reason": {
+          "type": "string"
+        },
+        "finding_count": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "incomplete": {
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "action",
+        "finding_count",
+        "incomplete"
+      ]
+    }
+  },
+  "x-governed": {
+    "requirements": [
+      "REQ-007",
+      "REQ-008",
+      "REQ-025",
+      "REQ-026",
+      "REQ-027"
+    ],
+    "adrs": [
+      "ADR-0006",
+      "ADR-0007"
+    ]
+  },
+  "x-authored": {
+    "statements": [
+      "object decision",
+      "enum decision.action allow|deny|skip|warn",
+      "string decision.path",
+      "string decision.reason",
+      "integer decision.finding_count min 0",
+      "boolean decision.incomplete",
+      "required decision",
+      "required decision.action",
+      "required decision.finding_count",
+      "required decision.incomplete",
+      "closed decision"
+    ]
+  }
+}

@@ -1,0 +1,67 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://dsh.dev/rs/schema/discovered-unit.json",
+  "title": "Discovered unit",
+  "description": "One unit discovered by a dependency provider, in the shape the contract engine consumes.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "unit"
+  ],
+  "properties": {
+    "unit": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "kind": {
+          "type": "string"
+        },
+        "name": {
+          "type": "string"
+        },
+        "line": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "end_line": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "exported": {
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "end_line",
+        "kind",
+        "line",
+        "name"
+      ]
+    }
+  },
+  "x-governed": {
+    "requirements": [
+      "REQ-014",
+      "REQ-016"
+    ],
+    "adrs": [
+      "ADR-0004"
+    ]
+  },
+  "x-authored": {
+    "statements": [
+      "object unit",
+      "string unit.kind",
+      "string unit.name",
+      "integer unit.line min 1",
+      "integer unit.end_line min 1",
+      "boolean unit.exported",
+      "required unit",
+      "required unit.kind",
+      "required unit.name",
+      "required unit.line",
+      "required unit.end_line",
+      "closed unit"
+    ]
+  }
+}

@@ -1,0 +1,52 @@
+{
+  "schema": "https://dsh.dev/rs/schema/requirement-record.json",
+  "slug": "version-profiles",
+  "generated_by": "dsh-repo-standard P2",
+  "requirement_count": 4,
+  "requirements": [
+    {
+      "id": "REQ-018",
+      "slug": "version-profiles",
+      "priority": "MUST",
+      "ears_pattern": "ubiquitous",
+      "text": "The System shall associate every profile with a language version range.",
+      "implements_adrs": [
+        "ADR-0005"
+      ],
+      "status": "draft"
+    },
+    {
+      "id": "REQ-019",
+      "slug": "version-profiles",
+      "priority": "MUST",
+      "ears_pattern": "event_driven",
+      "text": "When a file of a language is validated, the System shall select the profile whose version range contains the detected project language version.",
+      "implements_adrs": [
+        "ADR-0005"
+      ],
+      "status": "draft"
+    },
+    {
+      "id": "REQ-020",
+      "slug": "version-profiles",
+      "priority": "MUST",
+      "ears_pattern": "event_driven",
+      "text": "When the user pins a profile for a language in settings, the System shall use the pinned profile over the detected profile.",
+      "implements_adrs": [
+        "ADR-0005"
+      ],
+      "status": "draft"
+    },
+    {
+      "id": "REQ-021",
+      "slug": "version-profiles",
+      "priority": "MUST",
+      "ears_pattern": "unwanted_behaviour",
+      "text": "If no profile matches the detected language version, then the System shall select the pack default profile.",
+      "implements_adrs": [
+        "ADR-0005"
+      ],
+      "status": "draft"
+    }
+  ]
+}

@@ -1,0 +1,44 @@
+{
+  "schema": "https://dsh.dev/rs/schema/requirement-record.json",
+  "slug": "formatter-adapters",
+  "generated_by": "dsh-repo-standard P2",
+  "requirement_count": 4,
+  "requirements": [
+    {
+      "id": "REQ-028",
+      "slug": "formatter-adapters",
+      "priority": "MUST",
+      "ears_pattern": "ubiquitous",
+      "text": "The System shall implement no formatter-specific knowledge and invoke every formatter only through the adapter contract that its profile declares.",
+      "implements_adrs": [],
+      "status": "draft"
+    },
+    {
+      "id": "REQ-029",
+      "slug": "formatter-adapters",
+      "priority": "MUST",
+      "ears_pattern": "unwanted_behaviour",
+      "text": "If a profile declares no formatter, then the System shall run no formatting check on that profile's files.",
+      "implements_adrs": [],
+      "status": "draft"
+    },
+    {
+      "id": "REQ-030",
+      "slug": "formatter-adapters",
+      "priority": "MUST",
+      "ears_pattern": "ubiquitous",
+      "text": "The System shall provide stdin-binary, npm-function, and external-command as formatter adapter contracts.",
+      "implements_adrs": [],
+      "status": "draft"
+    },
+    {
+      "id": "REQ-031",
+      "slug": "formatter-adapters",
+      "priority": "MUST",
+      "ears_pattern": "ubiquitous",
+      "text": "The System shall ship no default formatter and provision no tool that no installed pack declares.",
+      "implements_adrs": [],
+      "status": "draft"
+    }
+  ]
+}

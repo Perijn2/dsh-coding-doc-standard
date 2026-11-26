@@ -1,0 +1,74 @@
+{
+  "schema": "https://dsh.dev/rs/schema/requirement-record.json",
+  "slug": "doc-syntax",
+  "generated_by": "dsh-repo-standard P2",
+  "requirement_count": 6,
+  "requirements": [
+    {
+      "id": "REQ-032",
+      "slug": "doc-syntax",
+      "priority": "MUST",
+      "ears_pattern": "ubiquitous",
+      "text": "The System shall decode the documentation header of every installed-pack language solely from the syntax tokens and field spellings that the matching profile declares.",
+      "implements_adrs": [
+        "ADR-0008"
+      ],
+      "status": "draft"
+    },
+    {
+      "id": "REQ-033",
+      "slug": "doc-syntax",
+      "priority": "MUST",
+      "ears_pattern": "ubiquitous",
+      "text": "The System shall extract the documentation header from line-prefixed comments, delimited comment blocks, and docstring quotes according to the header syntax the profile declares.",
+      "implements_adrs": [
+        "ADR-0008"
+      ],
+      "status": "draft"
+    },
+    {
+      "id": "REQ-034",
+      "slug": "doc-syntax",
+      "priority": "MUST",
+      "ears_pattern": "ubiquitous",
+      "text": "The System shall accept an ordered list of accepted spellings for each documentation field and shall name the first accepted spelling when it reports a missing field.",
+      "implements_adrs": [
+        "ADR-0008"
+      ],
+      "status": "draft"
+    },
+    {
+      "id": "REQ-035",
+      "slug": "doc-syntax",
+      "priority": "MUST",
+      "ears_pattern": "ubiquitous",
+      "text": "The System shall decode no content for a header line that begins with the declared tag sigil yet matches no field spelling, and shall append unlabeled header prose to the field the profile designates.",
+      "implements_adrs": [
+        "ADR-0008"
+      ],
+      "status": "draft"
+    },
+    {
+      "id": "REQ-036",
+      "slug": "doc-syntax",
+      "priority": "MUST",
+      "ears_pattern": "ubiquitous",
+      "text": "The System shall check each installed pack's golden example file against that pack's own documentation checks, and a golden example that fails shall fail the test suite.",
+      "implements_adrs": [
+        "ADR-0008"
+      ],
+      "status": "draft"
+    },
+    {
+      "id": "REQ-037",
+      "slug": "doc-syntax",
+      "priority": "MUST",
+      "ears_pattern": "state_driven",
+      "text": "While a pack governs only the documentation header of its language, the System shall keep unit-documentation checks in their existing pass and shall suppress only the duplicated header labels from it.",
+      "implements_adrs": [
+        "ADR-0008"
+      ],
+      "status": "draft"
+    }
+  ]
+}

@@ -1,0 +1,17 @@
+{
+	"id": "dart",
+	"label": "Dart",
+	"packVersion": "1.0.0",
+	"language": {
+		"name": "Dart",
+		"defaultProfile": "modern"
+	},
+	"profiles": ["modern"],
+	"dependencies": {
+		"units": {
+			"provider": "tree-sitter",
+			"grammar": "dart",
+			"query": "queries/units.scm"
+		}
+	}
+}

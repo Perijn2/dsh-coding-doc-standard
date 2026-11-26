@@ -1,0 +1,52 @@
+{
+  "schema": "https://dsh.dev/rs/schema/requirement-record.json",
+  "slug": "unit-discovery",
+  "generated_by": "dsh-repo-standard P2",
+  "requirement_count": 4,
+  "requirements": [
+    {
+      "id": "REQ-014",
+      "slug": "unit-discovery",
+      "priority": "MUST",
+      "ears_pattern": "ubiquitous",
+      "text": "The System shall discover units through the dependency provider that the matching profile declares.",
+      "implements_adrs": [
+        "ADR-0004"
+      ],
+      "status": "draft"
+    },
+    {
+      "id": "REQ-015",
+      "slug": "unit-discovery",
+      "priority": "MUST",
+      "ears_pattern": "ubiquitous",
+      "text": "The System shall provide tree-sitter, regex, npm, and external-command as unit-discovery providers.",
+      "implements_adrs": [
+        "ADR-0004"
+      ],
+      "status": "draft"
+    },
+    {
+      "id": "REQ-016",
+      "slug": "unit-discovery",
+      "priority": "MUST",
+      "ears_pattern": "unwanted_behaviour",
+      "text": "If a declared dependency provider or its pinned package is unavailable, then the System shall skip enforcement for that profile and report a visible notice.",
+      "implements_adrs": [
+        "ADR-0004"
+      ],
+      "status": "draft"
+    },
+    {
+      "id": "REQ-017",
+      "slug": "unit-discovery",
+      "priority": "MUST",
+      "ears_pattern": "ubiquitous",
+      "text": "The System shall pin every npm package dependency to one exact version.",
+      "implements_adrs": [
+        "ADR-0004"
+      ],
+      "status": "draft"
+    }
+  ]
+}

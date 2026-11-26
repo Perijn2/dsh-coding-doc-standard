@@ -1,0 +1,50 @@
+{
+	"id": "modern",
+	"languageVersions": ">=0",
+	"policyLanguage": "swift",
+	"extensions": [".swift"],
+	"codec": {
+		"headerSyntax": "line",
+		"headerToken": "///",
+		"fields": {
+			"author": "Author:",
+			"summary": "Summary:",
+			"description": "Description:",
+			"usage": "Usage:",
+			"changelog": "Changelog:",
+			"notes": "Notes:"
+		}
+	},
+	"units": {
+		"provider": "tree-sitter",
+		"grammar": "swift",
+		"query": "queries/units.scm",
+		"docBinding": {
+			"syntax": "line",
+			"token": "///"
+		}
+	},
+	"naming": {
+		"source": "https://www.swift.org/documentation/api-design-guidelines/",
+		"grammar": "swift",
+		"rules": [
+			{
+				"query": "[(class_declaration name: (_) @name) (protocol_declaration name: (_) @name)]",
+				"style": "UpperCamelCase",
+				"label": "type"
+			},
+			{
+				"query": "(function_declaration name: (simple_identifier) @name)",
+				"style": "lowerCamelCase",
+				"label": "function",
+				"excludeQuery": "((function_declaration (modifiers (member_modifier) @modifier) name: (simple_identifier) @name) (#eq? @modifier \"override\"))",
+				"excludeNamePattern": "^[^\\p{L}_]"
+			},
+			{
+				"query": "(enum_entry (simple_identifier) @name)",
+				"style": "lowerCamelCase",
+				"label": "enum case"
+			}
+		]
+	}
+}

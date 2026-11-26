@@ -1,0 +1,14 @@
+{
+	"id": "python",
+	"label": "Python",
+	"packVersion": "1.0.0",
+	"language": {
+		"name": "Python",
+		"defaultProfile": "modern"
+	},
+	"profiles": ["modern"],
+	"detect": {
+		"versionFiles": [".python-version"]
+	},
+	"dependencies": {}
+}

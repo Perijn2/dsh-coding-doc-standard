@@ -1,4 +1,4 @@
-﻿/**
+/**
  * @module formatter-command-tests
  * @author Perijn Huijser
  * Verifies parsing and execution of the managed formatter slash command.
@@ -102,6 +102,29 @@ test("formats direct UTF-8 pending content", async () => {
 	);
 	assert.equal(result.kind, "success", result.text);
 	assert.match(result.text, /export const café = 1;/u);
+});
+
+test("returns the complete formatted text for files above 200 KB", async () => {
+	const lines = [];
+	for (let index = 0; index < 8000; index += 1)
+		lines.push(`export const value${index} = ${index};`);
+	const source = `${lines.join("\n")}\n`;
+	assert.ok(source.length > 200_000, "fixture must exceed the old output cap");
+	const encoded = Buffer.from(source).toString("base64");
+	const result = await runFormatterCommand(
+		`--typescript --file big.ts --content-base64 ${encoded}`,
+		process.cwd(),
+		new AbortController().signal,
+	);
+	assert.equal(result.kind, "success", result.text);
+	assert.ok(
+		result.formattedContent?.startsWith("export const value0 = 0;"),
+		"the head of the formatted file must survive",
+	);
+	assert.ok(
+		result.formattedContent?.endsWith("export const value7999 = 7999;\n"),
+		"the tail of the formatted file must survive",
+	);
 });
 
 test("rejects conflicting candidate encodings", () => {

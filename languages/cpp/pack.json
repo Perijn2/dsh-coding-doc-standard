@@ -1,0 +1,17 @@
+{
+	"id": "cpp",
+	"label": "C++",
+	"packVersion": "1.0.0",
+	"language": {
+		"name": "C++",
+		"defaultProfile": "modern"
+	},
+	"profiles": ["modern"],
+	"dependencies": {
+		"units": {
+			"provider": "tree-sitter",
+			"grammar": "cpp",
+			"query": "queries/units.scm"
+		}
+	}
+}

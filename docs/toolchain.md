@@ -59,7 +59,7 @@ list. See `docs/platform-support.md` for runtime requirements and limitations.
 Run project-level documentation checks with:
 
 ```text
-node scripts/verify.mjs --doxygen path/to/Doxyfile
+node scripts/verify/verify.mjs --doxygen path/to/Doxyfile
 ```
 
 The supplied Doxyfile must explicitly set `WARN_IF_UNDOCUMENTED`,
@@ -67,13 +67,20 @@ The supplied Doxyfile must explicitly set `WARN_IF_UNDOCUMENTED`,
 not generate a Doxyfile because its inputs, excludes, and output location are
 project-specific.
 
-## Deliberately detailed-only tools
+## Project-toolchain formatters
 
-Rustfmt and clang-format are fast but coupled to a project toolchain or native
-LLVM installation. They are not pre-write enforced until the plugin can provision
-and verify a portable pinned toolchain for each supported platform. `verify`
-continues to reserve Rust/C++ formatting and analysis for project-aware checks.
-Doxygen now provides pinned project-level C/C++ documentation verification.
+The Rust pack declares `rustfmt` through the `external-command` adapter in
+`languages/rust/profiles/modern/profile.json`: when the project toolchain
+provides `rustfmt` on PATH, the pre-write gate pipes the candidate through
+`rustfmt --emit stdout` and diffs stdout; when the binary does not exist, the
+check degrades per `blockOnMissingFormatter` with the pack's own
+`unavailableHint`. The opt-in `formatRust` setting gates the check, and the
+settings catalog lists the formatter because the pack declares it.
+
+clang-format stays detailed-only: it is coupled to a native LLVM installation,
+and the plugin cannot provision a portable pinned toolchain for it, so `verify`
+continues to reserve C++ formatting and analysis for project-aware checks.
+Doxygen provides pinned project-level C/C++ documentation verification.
 
 ## Settings
 

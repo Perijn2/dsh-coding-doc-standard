@@ -1,0 +1,79 @@
+{
+	"id": "modern",
+	"languageVersions": ">=0",
+	"policyLanguage": "rust",
+	"extensions": [".rs"],
+	"formatter": {
+		"adapter": "external-command",
+		"checkMode": "stdout-diff",
+		"label": "rustfmt (project toolchain)",
+		"settingsKey": "formatRust",
+		"dependency": {
+			"source": "project",
+			"bin": "rustfmt"
+		},
+		"args": ["--emit", "stdout"],
+		"cleanExit": [0],
+		"diagnostics": "stderr",
+		"unavailableHint": "Install the Rust toolchain so rustfmt is on PATH, or switch formatRust off in the coding-doc-standard settings."
+	},
+	"codec": {
+		"headerSyntax": "line",
+		"headerToken": "//!",
+		"fields": {
+			"author": "Author:",
+			"summary": "Summary:",
+			"description": "Description:",
+			"usage": "Usage:",
+			"changelog": "Changelog:",
+			"notes": "Notes:"
+		}
+	},
+	"units": {
+		"provider": "tree-sitter",
+		"grammar": "rust",
+		"query": "queries/units.scm",
+		"docBinding": {
+			"syntax": "line",
+			"token": "///"
+		}
+	},
+	"naming": {
+		"source": "https://rust-lang.github.io/api-guidelines/naming.html",
+		"grammar": "rust",
+		"rules": [
+			{
+				"query": "[(struct_item name: (_) @name) (enum_item name: (_) @name) (trait_item name: (_) @name) (type_item name: (_) @name) (enum_variant name: (_) @name)]",
+				"style": "UpperCamelCase",
+				"label": "type or enum variant"
+			},
+			{
+				"query": "[(function_item name: (_) @name) (function_signature_item name: (_) @name)]",
+				"style": "snake_case",
+				"label": "function",
+				"skipAncestors": ["impl_item"]
+			},
+			{
+				"query": "[(const_item name: (_) @name) (static_item name: (_) @name)]",
+				"style": "SCREAMING_SNAKE_CASE",
+				"label": "constant or static",
+				"skipAncestors": ["impl_item"]
+			},
+			{
+				"query": "(impl_item !trait body: (declaration_list (function_item name: (_) @name)))",
+				"style": "snake_case",
+				"label": "inherent method"
+			},
+			{
+				"query": "(impl_item !trait body: (declaration_list (const_item name: (_) @name)))",
+				"style": "SCREAMING_SNAKE_CASE",
+				"label": "associated constant"
+			},
+			{
+				"query": "[(mod_item name: (_) @name) (field_declaration name: (_) @name)]",
+				"style": "snake_case",
+				"label": "module or field"
+			}
+		]
+	}
+}

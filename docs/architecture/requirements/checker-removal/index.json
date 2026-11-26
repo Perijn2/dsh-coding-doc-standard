@@ -1,0 +1,52 @@
+{
+  "schema": "https://dsh.dev/rs/schema/requirement-record.json",
+  "slug": "checker-removal",
+  "generated_by": "dsh-repo-standard P2",
+  "requirement_count": 4,
+  "requirements": [
+    {
+      "id": "REQ-039",
+      "slug": "checker-removal",
+      "priority": "MUST",
+      "ears_pattern": "event_driven",
+      "text": "When a write targets a path covered by a pack, the System shall make every header and unit-documentation verdict through that pack's declared codec and unit providers, so that checker.py and its regex label tables are no longer consulted for any family.",
+      "implements_adrs": [
+        "ADR-0009"
+      ],
+      "status": "draft"
+    },
+    {
+      "id": "REQ-040",
+      "slug": "checker-removal",
+      "priority": "MUST",
+      "ears_pattern": "ubiquitous",
+      "text": "The System shall spawn no interpreter process to decide documentation for a covered path; unit discovery for covered families shall run in-process through the declared grammar providers.",
+      "implements_adrs": [
+        "ADR-0009"
+      ],
+      "status": "draft"
+    },
+    {
+      "id": "REQ-041",
+      "slug": "checker-removal",
+      "priority": "MUST",
+      "ears_pattern": "ubiquitous",
+      "text": "The System shall record the Python signature-to-Parameters/Returns name matching and the exact C/C++ at-file basename rule as deliberate relaxations removed with checker.py and shall not rebuild them in the engine.",
+      "implements_adrs": [
+        "ADR-0009"
+      ],
+      "status": "draft"
+    },
+    {
+      "id": "REQ-042",
+      "slug": "checker-removal",
+      "priority": "MUST",
+      "ears_pattern": "event_driven",
+      "text": "When enforcing the Python or Compose pack, the System shall discover units through tree-sitter queries over the Python and YAML grammars that skip underscore-prefixed names and require each service's preceding summary comment, matching the retired checker's conventions.",
+      "implements_adrs": [
+        "ADR-0009"
+      ],
+      "status": "draft"
+    }
+  ]
+}

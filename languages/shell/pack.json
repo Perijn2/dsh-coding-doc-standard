@@ -1,0 +1,17 @@
+{
+	"id": "shell",
+	"label": "Shell",
+	"packVersion": "1.0.0",
+	"language": {
+		"name": "Shell",
+		"defaultProfile": "modern"
+	},
+	"profiles": ["modern"],
+	"dependencies": {
+		"units": {
+			"provider": "tree-sitter",
+			"grammar": "bash",
+			"query": "queries/units.scm"
+		}
+	}
+}

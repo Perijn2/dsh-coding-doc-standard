@@ -1,0 +1,17 @@
+{
+	"id": "go",
+	"label": "Go",
+	"packVersion": "1.0.0",
+	"language": {
+		"name": "Go",
+		"defaultProfile": "modern"
+	},
+	"profiles": ["modern"],
+	"dependencies": {
+		"units": {
+			"provider": "tree-sitter",
+			"grammar": "go",
+			"query": "queries/units.scm"
+		}
+	}
+}

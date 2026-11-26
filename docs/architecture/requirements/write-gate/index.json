@@ -1,0 +1,41 @@
+{
+  "schema": "https://dsh.dev/rs/schema/requirement-record.json",
+  "slug": "write-gate",
+  "generated_by": "dsh-repo-standard P2",
+  "requirement_count": 3,
+  "requirements": [
+    {
+      "id": "REQ-025",
+      "slug": "write-gate",
+      "priority": "MUST",
+      "ears_pattern": "ubiquitous",
+      "text": "The System shall aggregate every applicable finding for one pending write into one denial message.",
+      "implements_adrs": [
+        "ADR-0007"
+      ],
+      "status": "draft"
+    },
+    {
+      "id": "REQ-026",
+      "slug": "write-gate",
+      "priority": "MUST",
+      "ears_pattern": "unwanted_behaviour",
+      "text": "If a check cannot complete, then the System shall allow the write with a visible notice unless fail-closed is configured.",
+      "implements_adrs": [
+        "ADR-0007"
+      ],
+      "status": "draft"
+    },
+    {
+      "id": "REQ-027",
+      "slug": "write-gate",
+      "priority": "MUST",
+      "ears_pattern": "event_driven",
+      "text": "When one language pack fails internally, the System shall continue enforcing the remaining installed packs.",
+      "implements_adrs": [
+        "ADR-0007"
+      ],
+      "status": "draft"
+    }
+  ]
+}

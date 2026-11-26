@@ -1,4 +1,4 @@
-﻿/**
+/**
  * @module hook-runner-tests
  * @author Perijn Huijser
  * Verifies pending write and edit candidate construction for hook execution.
@@ -14,16 +14,22 @@
  */
 
 import assert from "node:assert/strict";
-import { mkdtemp, rm, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
+import {
+	formatterDeclarationFor,
+	formatWithDeclaredFormatter,
+	runFormatterAdapter,
+} from "../src/engine/formatters.mjs";
+import { loadPacks } from "../src/engine/registry.mjs";
 import { checkProjectPublicUnits } from "../src/hook/public-unit-adapter.mjs";
 import {
+	buildCandidate,
 	candidateFromPayload,
 	checkFormatting,
 	checkSourcePublicUnits,
-	formatterProfile,
 	loadPolicy,
 } from "../src/hook/run.mjs";
 
@@ -88,22 +94,26 @@ const formatterPolicy = {
 	formatDockerCompose: true,
 };
 
-test("selects only pinned fast formatter profiles", () => {
-	const policy = formatterPolicy;
-	assert.equal(formatterProfile("example.py", policy), "python");
-	assert.equal(formatterProfile("example.ts", policy), "typescriptJavascript");
-	assert.equal(formatterProfile("example.tsx", policy), "typescriptJavascript");
-	assert.equal(formatterProfile("example.jsx", policy), "typescriptJavascript");
-	assert.equal(formatterProfile("compose.yaml", policy), "dockerCompose");
+test("resolves formatter declarations from packs, never from engine knowledge", () => {
 	assert.equal(
-		formatterProfile("example.rs", { ...policy, formatRust: false }),
-		null,
+		formatterDeclarationFor("example.py").formatter.settingsKey,
+		"formatPython",
 	);
 	assert.equal(
-		formatterProfile("example.rs", { ...policy, formatRust: true }),
-		"rust",
+		formatterDeclarationFor("example.tsx").formatter.label,
+		"@biomejs/biome 2.5.12",
 	);
-	assert.equal(formatterProfile("example.cpp", policy), null);
+	assert.equal(
+		formatterDeclarationFor("compose.yaml").formatter.label,
+		"prettier 3.9.6",
+	);
+	// The Rust pack declares the project-toolchain rustfmt through the
+	// external-command adapter, gated by the opt-in formatRust setting.
+	const rustFormatter = formatterDeclarationFor("example.rs");
+	assert.equal(rustFormatter.formatter.adapter, "external-command");
+	assert.equal(rustFormatter.formatter.settingsKey, "formatRust");
+	assert.equal(rustFormatter.formatter.dependency.bin, "rustfmt");
+	assert.equal(formatterDeclarationFor("example.cpp"), null);
 	for (const path of [
 		"example.go",
 		"example.cs",
@@ -116,16 +126,18 @@ test("selects only pinned fast formatter profiles", () => {
 		"Example.swift",
 		"example.dart",
 		"Example.hs",
-		"example.lua",
 		"Example.scala",
 	]) {
-		assert.equal(formatterProfile(path, policy), null, path);
+		assert.equal(formatterDeclarationFor(path), null, path);
 	}
+	// The Lua pack owns documentation, not formatting.
+	assert.equal(formatterDeclarationFor("example.lua"), null);
 });
 
 test("checks direct exported TypeScript and JavaScript units only when enabled", () => {
 	const policy = {
 		...loadPolicy(),
+		enabled: true,
 		publicUnitDocs: { typescriptJavascript: true },
 	};
 	const missing = checkSourcePublicUnits(
@@ -164,6 +176,18 @@ export default class Example {}
 			{ ...loadPolicy(), publicUnitDocs: { typescriptJavascript: false } },
 		),
 		[],
+	);
+	assert.deepEqual(
+		checkSourcePublicUnits(
+			{ path: "example.ts", content: "export function missing() {}\n" },
+			{
+				...loadPolicy(),
+				enabled: false,
+				publicUnitDocs: { typescriptJavascript: true },
+			},
+		),
+		[],
+		"a disabled policy must never report findings",
 	);
 });
 
@@ -213,7 +237,7 @@ test("uses rustdoc as a native Rust public-unit adapter", async () => {
 		publicUnitAdapters: {
 			rust: {
 				command: process.execPath,
-				args: ["scripts/rust-public-unit-adapter.mjs"],
+				args: ["scripts/adapters/rust-public-unit-adapter.mjs"],
 				cwd: process.cwd(),
 			},
 		},
@@ -233,7 +257,7 @@ test("uses Doxygen as a native C/C++ public-unit adapter", async () => {
 		publicUnitAdapters: {
 			cCpp: {
 				command: process.execPath,
-				args: ["scripts/cpp-public-unit-adapter.mjs"],
+				args: ["scripts/adapters/cpp-public-unit-adapter.mjs"],
 				cwd: process.cwd(),
 			},
 		},
@@ -269,6 +293,41 @@ test("fails closed for malformed and failing project adapters", async () => {
 	assert.match(failing[0], /failed: exit 7/);
 });
 
+test("cancels a running project adapter before its own timeout", async () => {
+	const failures = await checkProjectPublicUnits(
+		{ path: "example.go", content: "pending" },
+		{
+			publicUnitDocs: { go: true },
+			publicUnitAdapters: {
+				go: {
+					command: process.execPath,
+					args: ["-e", "setInterval(() => {}, 1000)"],
+					timeoutMs: 2000,
+				},
+			},
+		},
+		{ signal: AbortSignal.timeout(100) },
+	);
+	assert.match(failures[0], /aborted/iu);
+});
+
+test("survives a large pending payload when the adapter exits unread", async () => {
+	const failures = await checkProjectPublicUnits(
+		{ path: "example.go", content: "x".repeat(4_000_000) },
+		{
+			...loadPolicy(),
+			publicUnitDocs: { go: true },
+			publicUnitAdapters: {
+				go: {
+					command: process.execPath,
+					args: ["-e", "setTimeout(() => process.exit(3), 0)"],
+				},
+			},
+		},
+	);
+	assert.match(failures[0], /failed: exit 3/u);
+});
+
 test("accepts a rustfmt-formatted Rust candidate when the opt-in profile is enabled", async () => {
 	assert.equal(
 		await checkFormatting(
@@ -277,6 +336,251 @@ test("accepts a rustfmt-formatted Rust candidate when the opt-in profile is enab
 		),
 		null,
 	);
+});
+
+/**
+ * Writes one fixture pack carrying a project-sourced formatter into a packs root.
+ *
+ * @param {string} packsRoot - Temporary languages root passed to loadPacks.
+ * @param {object} formatter - Formatter declaration to embed in the profile.
+ * @returns {Promise<void>} Completion once the pack files exist.
+ */
+async function writeFakePack(packsRoot, formatter) {
+	const packDir = join(packsRoot, "fake");
+	await mkdir(join(packDir, "profiles", "modern"), { recursive: true });
+	await writeFile(
+		join(packDir, "pack.json"),
+		JSON.stringify({
+			id: "fake",
+			label: "Fake",
+			packVersion: "1.0.0",
+			language: { name: "Fake", defaultProfile: "modern" },
+			profiles: ["modern"],
+		}),
+	);
+	await writeFile(
+		join(packDir, "profiles", "modern", "profile.json"),
+		JSON.stringify({
+			id: "modern",
+			languageVersions: "*",
+			extensions: [".fake"],
+			codec: {
+				headerSyntax: "line",
+				headerToken: "#",
+				fields: { author: "Author:", summary: "Summary:" },
+			},
+			units: {
+				provider: "regex",
+				pattern: "^([a-z]+)\\s*\\(",
+				kind: "function",
+			},
+			formatter,
+		}),
+	);
+}
+
+test("degrades a missing project formatter per blockOnMissingFormatter", async () => {
+	await withTemporaryDirectory(async (directory) => {
+		const packsRoot = join(directory, "packs");
+		await writeFakePack(packsRoot, {
+			adapter: "external-command",
+			checkMode: "stdout-diff",
+			label: "fakefmt (project toolchain)",
+			settingsKey: "formatFake",
+			dependency: {
+				source: "project",
+				bin: "definitely-missing-fakefmt-12345",
+			},
+			args: [],
+			cleanExit: [0],
+			unavailableHint: "Install fakefmt in the project.",
+		});
+		const registry = loadPacks(packsRoot);
+		assert.equal(registry.excluded.length, 0);
+		const candidate = { path: "example.fake", content: "alpha()\n" };
+		const allowed = await runFormatterAdapter(
+			candidate,
+			{ formatOnWrite: true, formatFake: true, blockOnMissingFormatter: false },
+			directory,
+			{ registry },
+		);
+		assert.equal(allowed, null);
+		const blocked = await runFormatterAdapter(
+			candidate,
+			{ formatOnWrite: true, formatFake: true, blockOnMissingFormatter: true },
+			directory,
+			{ registry },
+		);
+		assert.match(blocked, /fakefmt \(project toolchain\)/);
+		assert.match(blocked, /Install fakefmt in the project\./);
+		const gated = await runFormatterAdapter(
+			candidate,
+			{ formatOnWrite: true, formatFake: false, blockOnMissingFormatter: true },
+			directory,
+			{ registry },
+		);
+		assert.equal(
+			gated,
+			null,
+			"the settings key gates the check before any spawn",
+		);
+	});
+});
+
+test("runs a pack-declared external-command formatter when the binary exists", async () => {
+	await withTemporaryDirectory(async (directory) => {
+		await writeFile(
+			join(directory, "echo.mjs"),
+			'let s = ""; process.stdin.on("data", (c) => (s += c)).on("end", () => process.stdout.write(s));',
+		);
+		await writeFile(
+			join(directory, "upper.mjs"),
+			'let s = ""; process.stdin.on("data", (c) => (s += c)).on("end", () => process.stdout.write(s.toUpperCase()));',
+		);
+		const formatterFor = (script) => ({
+			adapter: "external-command",
+			checkMode: "stdout-diff",
+			label: "fakefmt",
+			settingsKey: "formatFake",
+			dependency: { source: "project", bin: process.execPath },
+			args: [script],
+			cleanExit: [0],
+		});
+		const packsRoot = join(directory, "packs");
+		const candidate = { path: "example.fake", content: "alpha()\n" };
+		await writeFakePack(packsRoot, formatterFor(join(directory, "echo.mjs")));
+		const clean = await runFormatterAdapter(
+			candidate,
+			{ formatOnWrite: true, formatFake: true },
+			directory,
+			{ registry: loadPacks(packsRoot) },
+		);
+		assert.equal(clean, null, "identical stdout means already formatted");
+		await writeFakePack(packsRoot, formatterFor(join(directory, "upper.mjs")));
+		const changed = await runFormatterAdapter(
+			candidate,
+			{ formatOnWrite: true, formatFake: true },
+			directory,
+			{ registry: loadPacks(packsRoot) },
+		);
+		assert.match(changed, /must match fakefmt formatting/);
+	});
+});
+
+test("excludes a full profile whose declared formatter is invalid", async () => {
+	await withTemporaryDirectory(async (directory) => {
+		const packsRoot = join(directory, "packs");
+		await writeFakePack(packsRoot, {
+			adapter: "bogus-adapter",
+			dependency: { source: "project", bin: "x" },
+		});
+		const registry = loadPacks(packsRoot);
+		assert.equal(registry.packs.size, 0);
+		assert.equal(registry.excluded.length, 1);
+		assert.match(registry.excluded[0].reason, /unsupported formatter adapter/);
+	});
+});
+
+test("formatWithDeclaredFormatter returns the pack formatter's stdout", async () => {
+	await withTemporaryDirectory(async (directory) => {
+		await writeFile(
+			join(directory, "upper.mjs"),
+			'let s = ""; process.stdin.on("data", (c) => (s += c)).on("end", () => process.stdout.write(s.toUpperCase()));',
+		);
+		const packsRoot = join(directory, "packs");
+		await writeFakePack(packsRoot, {
+			adapter: "external-command",
+			checkMode: "stdout-diff",
+			label: "fakefmt",
+			settingsKey: "formatFake",
+			dependency: { source: "project", bin: process.execPath },
+			args: [join(directory, "upper.mjs")],
+			cleanExit: [0],
+		});
+		const registry = loadPacks(packsRoot);
+		const candidate = { path: "example.fake", content: "alpha()\n" };
+		const result = await formatWithDeclaredFormatter(
+			candidate,
+			{ formatFake: true },
+			directory,
+			{ registry },
+		);
+		assert.equal(result.status, "formatted");
+		assert.equal(result.text, "ALPHA()\n");
+		assert.equal(result.changed, true);
+		const disabled = await formatWithDeclaredFormatter(
+			candidate,
+			{ formatFake: false },
+			directory,
+			{ registry },
+		);
+		assert.equal(disabled.status, "disabled");
+	});
+});
+
+test("captures complete large formatter stdout", async () => {
+	await withTemporaryDirectory(async (directory) => {
+		const expected = "formatted\n".repeat(100_000);
+		await writeFile(
+			join(directory, "delayed.mjs"),
+			`process.stdout.end(${JSON.stringify(expected)});`,
+		);
+		const packsRoot = join(directory, "packs");
+		await writeFakePack(packsRoot, {
+			adapter: "external-command",
+			checkMode: "stdout-diff",
+			dependency: { source: "project", bin: process.execPath },
+			args: [join(directory, "delayed.mjs")],
+			cleanExit: [0],
+		});
+		const result = await formatWithDeclaredFormatter(
+			{ path: "example.fake", content: "before\n" },
+			{},
+			directory,
+			{ registry: loadPacks(packsRoot) },
+		);
+		assert.equal(result.status, "formatted");
+		assert.equal(result.text.length, expected.length);
+		assert.equal(result.text, expected);
+	});
+});
+
+test("formatWithDeclaredFormatter reports a missing project binary per policy", async () => {
+	await withTemporaryDirectory(async (directory) => {
+		const packsRoot = join(directory, "packs");
+		await writeFakePack(packsRoot, {
+			adapter: "external-command",
+			checkMode: "stdout-diff",
+			label: "fakefmt",
+			settingsKey: "formatFake",
+			dependency: {
+				source: "project",
+				bin: "definitely-missing-fakefmt-12345",
+			},
+			args: [],
+			cleanExit: [0],
+			unavailableHint: "Install fakefmt in the project.",
+		});
+		const registry = loadPacks(packsRoot);
+		const candidate = { path: "example.fake", content: "alpha()\n" };
+		const blocked = await formatWithDeclaredFormatter(
+			candidate,
+			{ formatFake: true, blockOnMissingFormatter: true },
+			directory,
+			{ registry },
+		);
+		assert.equal(blocked.status, "unavailable");
+		assert.equal(blocked.blocked, true);
+		assert.match(blocked.message, /Install fakefmt in the project\./);
+		const allowed = await formatWithDeclaredFormatter(
+			candidate,
+			{ formatFake: true, blockOnMissingFormatter: false },
+			directory,
+			{ registry },
+		);
+		assert.equal(allowed.status, "unavailable");
+		assert.equal(allowed.blocked, false);
+	});
 });
 
 test("blocks a Python candidate that Ruff would reformat", async () => {
@@ -328,4 +632,66 @@ test("blocks TypeScript and Compose candidates that pinned formatters would chan
 	);
 	assert.match(typescript, /@biomejs\/biome 2\.5\.12/);
 	assert.match(compose, /prettier 3\.9\.6/);
+});
+
+test("builds a candidate from an edit whose line endings drift", async () => {
+	await withTemporaryDirectory(async (directory) => {
+		const path = join(directory, "crlf.py");
+		await writeFile(path, "before\r\nsame\r\nafter\r\n", "utf8");
+		const built = await buildCandidate({
+			tool_input: {
+				file_path: path,
+				old_string: "before\nsame",
+				new_string: "first\nsecond",
+			},
+		});
+		assert.equal(built.applicable, true);
+		assert.equal(built.candidate.content, "first\r\nsecond\r\nafter\r\n");
+	});
+});
+
+test("builds a candidate from a replace_all edit", async () => {
+	await withTemporaryDirectory(async (directory) => {
+		const path = join(directory, "multi.py");
+		await writeFile(path, "same\nsame\n", "utf8");
+		const built = await buildCandidate({
+			tool_input: {
+				file_path: path,
+				old_string: "same",
+				new_string: "next",
+				replace_all: true,
+			},
+		});
+		assert.equal(built.applicable, true);
+		assert.equal(built.candidate.content, "next\nnext\n");
+	});
+});
+
+test("still skips a multi-match edit without replace_all", async () => {
+	await withTemporaryDirectory(async (directory) => {
+		const path = join(directory, "multi.py");
+		await writeFile(path, "same\nsame\n", "utf8");
+		const built = await buildCandidate({
+			tool_input: { file_path: path, old_string: "same", new_string: "next" },
+		});
+		assert.equal(built.applicable, false);
+		assert.match(built.reason, /matched 2 copies/);
+	});
+});
+
+test("skips a replace_all edit whose old text matches nothing", async () => {
+	await withTemporaryDirectory(async (directory) => {
+		const path = join(directory, "multi.py");
+		await writeFile(path, "same\n", "utf8");
+		const built = await buildCandidate({
+			tool_input: {
+				file_path: path,
+				old_string: "absent",
+				new_string: "next",
+				replace_all: true,
+			},
+		});
+		assert.equal(built.applicable, false);
+		assert.match(built.reason, /nothing to change/);
+	});
 });

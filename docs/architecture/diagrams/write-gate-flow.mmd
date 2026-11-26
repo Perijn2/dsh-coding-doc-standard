@@ -1,0 +1,30 @@
+%% write-gate-flow: flowchart diagram linked to ADR-0007.
+%% Rationale: This source stays with its owning ADR for review and conformance.
+flowchart TD
+  Start([Pending write or edit]) --> Disabled{Plugin enabled?}
+  Disabled -- "no" --> AllowWrite([Allow])
+  Disabled -- "yes" --> Matched{Tool matched?}
+  Matched -- "no" --> AllowWrite
+  Matched -- "yes" --> Ignored{Path on ignore list?}
+  Ignored -- "yes" --> AllowWrite
+  Ignored -- "no" --> Candidate["Build candidate<br/>(write content or old/new pair, EOL tolerant)"]
+  Candidate -- "unreadable or ambiguous" --> AllowWrite
+  Candidate --> Registry["pack-registry: pack for path?"]
+  Registry -- "no pack" --> AllowWrite
+  Registry --> Select["profile-selector: pin > detect > default"]
+  Select --> Units["dependency-providers: findUnits<br/>(tree-sitter | regex | npm | external-command)"]
+  Units -- "provider unavailable" --> Notice["Visible skip notice"]
+  Select --> Decode["codec: skip preamble, decode header + unit docs"]
+  Decode --> Check["contract-engine: universal contract findings"]
+  Check --> Format["Declared formatter check"]
+  Check --> Aggregate["gate-runner: one budget, all findings"]
+  Units --> Aggregate
+  Format --> Aggregate
+  Aggregate --> Findings{Findings present?}
+  Findings -- "yes" --> Deny([Deny: one aggregated message])
+  Findings -- "no" --> Incomplete{Any check incomplete?}
+  Incomplete -- "no" --> CleanWrite([Allow])
+  Incomplete -- "yes" --> FailOpen{Fail-open?}
+  FailOpen -- "yes" --> WarnWrite([Allow + notice])
+  FailOpen -- "no" --> DenyIncomplete([Deny: not fully checked])
+  Notice --> AllowWrite

@@ -61,13 +61,27 @@ function declarationKind(node) {
 	return "declaration";
 }
 
-function hasAttachedJSDoc(source, node) {
+/**
+ * Answers whether one declaration carries an attached JSDoc block.
+ *
+ * Functions, classes, enums, interfaces, and type aliases need a multi-line
+ * block because the contract pass reads tags from it. Variables (fields,
+ * constants) may use a one-line block, matching the layout rule that allows
+ * one-liners exactly where one line carries the whole contract.
+ *
+ * @param {object} source - Parsed TypeScript source file.
+ * @param {object} node - Declaration to inspect.
+ * @param {boolean} [allowSingleLine] - True for variable declarations.
+ * @returns {boolean} True when a JSDoc block sits directly above the node.
+ */
+function hasAttachedJSDoc(source, node, allowSingleLine = false) {
 	const start = node.getStart(source);
 	const ranges =
 		ts.getLeadingCommentRanges(source.text, node.getFullStart()) ?? [];
 	const last = ranges.at(-1);
 	const comment = last ? source.text.slice(last.pos, last.end) : "";
-	if (!comment.startsWith("/**") || !comment.includes("\n")) return false;
+	if (!comment.startsWith("/**")) return false;
+	if (!comment.includes("\n") && !allowSingleLine) return false;
 	const gap = source.text.slice(last.end, start);
 	return /^\s*$/.test(gap) && !/\n\s*\n/.test(gap);
 }
@@ -79,15 +93,64 @@ function documentationText(source, node) {
 	return last ? source.text.slice(last.pos, last.end) : "";
 }
 
+/**
+ * Finds the end of one balanced brace or bracket group at the start of text.
+ *
+ * @param {string} text - Tag remainder that begins with a brace or bracket.
+ * @returns {number} Index just past the matching closer.
+ */
+function skipBalanced(text) {
+	const opener = text[0];
+	const closer = opener === "{" ? "}" : "]";
+	let depth = 0;
+	for (let index = 0; index < text.length; index += 1) {
+		const char = text[index];
+		if (char === opener) depth += 1;
+		else if (char === closer) {
+			depth -= 1;
+			if (depth === 0) return index + 1;
+		}
+	}
+	return text.length;
+}
+
+/**
+ * Collects parameter names documented by `@param` tags in one documentation block.
+ *
+ * Accepts the TSDoc `@param name` form, the JSDoc typed `@param {Type} name`
+ * form, and optional brackets in either position, including types whose own
+ * text contains braces.
+ *
+ * @param {string} documentation - Raw JSDoc or TSDoc block text.
+ * @returns {Set<string>} Documented parameter names found in the block.
+ */
+export function documentedParameterNames(documentation) {
+	const names = new Set();
+	if (!documentation) return names;
+	const body = documentation.replace(/^\/\*\*?/, "").replace(/\*\/\s*$/, "");
+	for (const rawLine of body.split(/\r?\n/)) {
+		let line = rawLine.replace(/^\s*\*+/, "").trim();
+		const tag = /^@(?:param|argument|arg)\b/.exec(line);
+		if (!tag) continue;
+		line = line.slice(tag[0].length).trim();
+		while (line.startsWith("{")) line = line.slice(skipBalanced(line)).trim();
+		const named = /^\[?\s*([A-Za-z_$][\w$]*)/.exec(line);
+		if (named) names.add(named[1]);
+	}
+	return names;
+}
+
 function contractViolations(source, node) {
 	if (!ts.isFunctionDeclaration(node)) return [];
 	const documentation = documentationText(source, node);
+	const documented = documentedParameterNames(documentation);
 	const line =
 		source.getLineAndCharacterOfPosition(node.getStart(source)).line + 1;
 	const failures = [];
 	for (const parameter of node.parameters) {
-		const name = parameter.name.getText(source);
-		if (!new RegExp(`@param\\s+${name}\\b`).test(documentation))
+		const name = parameter.name.getText(source).replace(/^\.{3}/, "");
+		if (!/^[A-Za-z_$][\w$]*$/.test(name)) continue;
+		if (!documented.has(name))
 			failures.push({
 				line,
 				message: `Missing @param documentation for exported parameter '${name}'.`,
@@ -157,7 +220,7 @@ export function checkTypescriptPublicUnits(candidate, policy) {
 		}
 		if (
 			!ts.isVariableStatement(statement) ||
-			hasAttachedJSDoc(source, statement)
+			hasAttachedJSDoc(source, statement, true)
 		)
 			continue;
 		for (const declaration of statement.declarationList.declarations) {

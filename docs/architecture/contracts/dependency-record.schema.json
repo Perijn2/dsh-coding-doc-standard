@@ -1,0 +1,86 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://dsh.dev/rs/schema/dependency-record.json",
+  "title": "Dependency record",
+  "description": "One provisioned dependency in the durable per-pack tools store.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "dependency"
+  ],
+  "properties": {
+    "dependency": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "pack": {
+          "type": "string"
+        },
+        "role": {
+          "type": "string",
+          "enum": [
+            "formatter",
+            "units"
+          ]
+        },
+        "provider": {
+          "type": "string",
+          "enum": [
+            "external-command",
+            "npm",
+            "regex",
+            "tree-sitter"
+          ]
+        },
+        "package": {
+          "type": "string"
+        },
+        "version": {
+          "type": "string"
+        },
+        "store_path": {
+          "type": "string"
+        },
+        "checksum": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "pack",
+        "provider",
+        "role",
+        "store_path",
+        "version"
+      ]
+    }
+  },
+  "x-governed": {
+    "requirements": [
+      "REQ-016",
+      "REQ-017",
+      "REQ-031"
+    ],
+    "adrs": [
+      "ADR-0004"
+    ]
+  },
+  "x-authored": {
+    "statements": [
+      "object dependency",
+      "string dependency.pack",
+      "enum dependency.role formatter|units",
+      "enum dependency.provider external-command|npm|regex|tree-sitter",
+      "string dependency.package",
+      "string dependency.version",
+      "string dependency.store_path",
+      "string dependency.checksum",
+      "required dependency",
+      "required dependency.pack",
+      "required dependency.role",
+      "required dependency.provider",
+      "required dependency.version",
+      "required dependency.store_path",
+      "closed dependency"
+    ]
+  }
+}

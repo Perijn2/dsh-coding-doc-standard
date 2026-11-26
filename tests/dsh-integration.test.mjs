@@ -1,15 +1,17 @@
-﻿/**
+/**
  * @module dsh-integration-tests
  * @author Perijn Huijser
  * Verifies the bundle's live wiring against the real DSH runtime packages.
  *
  * @remarks
  * Usage:
- *   Core principle: Exercise the real Cordis context, settings installer, and
- *   native global guard instead of hand-wired stand-ins.
+ *   Core principle: Exercise the real Cordis context, the volatile Config
+ *   commit path, and the asynchronous pre-execute pipeline instead of
+ *   hand-wired stand-ins.
  *   Setup: Run with Node's built-in test runner from the package root.
- *   Workflow: Mount the host plugin, assert settings registration and durable
- *   persistence, then drive tool interception through the real bridge.
+ *   Workflow: Mount the host plugin over resolved config refs, assert the
+ *   settings presentation and durable persistence, then drive tool
+ *   interception through the real bridge.
  *   API guide: Tests cover settings change propagation and PreToolUse blocking.
  *   Worked example: npm test
  */
@@ -20,6 +22,7 @@ import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import test from "node:test";
 import { fileURLToPath, pathToFileURL } from "node:url";
+import { createVolatile, updateVolatile } from "@deepseek-ai/cosmokit";
 
 const root = join(dirname(fileURLToPath(import.meta.url)), "..");
 
@@ -28,8 +31,18 @@ const home = await mkdtemp(join(tmpdir(), "coding-doc-standard-home-"));
 process.env.USERPROFILE = home;
 process.env.HOME = home;
 
-const POLICY_KEYS = [
+// The flat contract the settings card edits: every resolved Config field is
+// one volatile ref at the top level of the served document.
+const GENERAL_KEYS = [
 	"enabled",
+	"systemPromptAdvisory",
+	"validatorTimeoutMs",
+	"aggregateMaxFindings",
+	"validatorFailOpen",
+	"matchedTools",
+	"ignoredPaths",
+];
+const LANGUAGE_KEYS = [
 	"python",
 	"typescriptJavascript",
 	"rust",
@@ -47,33 +60,26 @@ const POLICY_KEYS = [
 	"haskell",
 	"lua",
 	"scala",
-	...[
-		"rust",
-		"cCpp",
-		"go",
-		"csharp",
-		"java",
-		"kotlin",
-		"shell",
-		"php",
-		"ruby",
-		"swift",
-		"dart",
-		"haskell",
-		"lua",
-		"scala",
-	].flatMap((language) => [
-		`${language}HookCommand`,
-		`${language}HookArgs`,
-		`${language}HookCwd`,
-		`${language}HookTimeoutMs`,
-	]),
+];
+const FORMAT_KEYS = [
 	"formatOnWrite",
 	"formatPython",
 	"formatTypescriptJavascript",
 	"formatRust",
 	"formatDockerCompose",
 	"blockOnMissingFormatter",
+];
+const HOOK_SUFFIXES = ["HookCommand", "HookArgs", "HookCwd", "HookTimeoutMs"];
+const HOOK_KEYS = LANGUAGE_KEYS.filter(
+	(key) => !["python", "typescriptJavascript", "dockerCompose"].includes(key),
+).flatMap((language) => HOOK_SUFFIXES.map((suffix) => language + suffix));
+const CONFIG_KEYS = [
+	...GENERAL_KEYS,
+	...LANGUAGE_KEYS,
+	...FORMAT_KEYS,
+	...HOOK_KEYS,
+	"packs",
+	"packCatalog",
 ];
 
 const COMPLIANT_TS = [
@@ -101,31 +107,20 @@ const COMPLIANT_TS = [
 const UNDOCUMENTED_TS = "export const undocumented = compute();\n";
 
 /**
- * Builds a settings service stub matching the dsh-settings consumer contract.
+ * Records settings presentation policies and answers with disposers.
  *
- * @returns {object} Stub with registrations, register, and change helpers.
+ * @returns {{presentations: object[], configure: (presentation: object) => () => void}} Settings service stub.
  */
 function createSettingsStub() {
-	const registrations = [];
-	let doc = {};
-	const watchers = new Set();
+	const presentations = [];
 	return {
-		registrations,
-		register(namespace, schema, options) {
-			doc = { ...options.base };
-			registrations.push({ namespace, schema, base: options.base });
-			return {
-				get: () => doc,
-				watch: (callback) => {
-					watchers.add(callback);
-					return () => watchers.delete(callback);
-				},
+		presentations,
+		configure(presentation) {
+			presentations.push(presentation);
+			return () => {
+				const index = presentations.indexOf(presentation);
+				if (index !== -1) presentations.splice(index, 1);
 			};
-		},
-		change(patch) {
-			const previous = doc;
-			doc = { ...doc, ...patch };
-			for (const callback of [...watchers]) callback(doc, previous);
 		},
 	};
 }
@@ -150,25 +145,64 @@ function createCommandsStub() {
 }
 
 /**
- * Captures native global tool guards registered by the host plugin.
+ * Captures agent-tool registrations.
  *
- * @returns {{guards: Function[], guard: (guard: Function) => () => void}} Guard registry stub.
+ * Deliberately has no `guard` method, so a regression back to the synchronous
+ * global tool guard fails loudly instead of being silently accepted.
+ *
+ * @returns {{registrations: object[], calls: object[], onExecute: ((input: object) => void | Promise<void>) | null, register: (definition: object) => () => void, get: (name: string) => object, execute: (input: object) => Promise<{isError: boolean, content: object[]}>}} Tool registry stub that also records the inner dispatches the plugin makes.
  */
 function createToolsStub() {
-	const guards = [];
 	const registrations = [];
-	return {
-		guards,
+	const calls = [];
+	const stub = {
 		registrations,
+		calls,
+		onExecute: null,
 		register(definition) {
 			registrations.push(definition);
 			return () => registrations.splice(registrations.indexOf(definition), 1);
 		},
-		guard(guard) {
-			guards.push(guard);
+		get(name) {
+			return registrations.find((entry) => entry.name === name) ?? { name };
+		},
+		async execute(input) {
+			calls.push(input);
+			await stub.onExecute?.(input);
+			return {
+				results: [
+					{
+						callId: input.calls[0].id,
+						result: {
+							isError: false,
+							content: [{ type: "text", text: "written" }],
+						},
+					},
+				],
+				additionalContexts: [],
+				concluded: false,
+			};
+		},
+	};
+	return stub;
+}
+
+/**
+ * Records the system-prompt sections registered by the host plugin.
+ *
+ * @returns {{sections: object[], section: (section: object) => () => void}} Prompt registry stub.
+ */
+function createSystemPromptStub() {
+	const sections = [];
+	return {
+		sections,
+		section(section) {
+			if (sections.some((entry) => entry.name === section.name))
+				throw new Error(`duplicate prompt section: ${section.name}`);
+			sections.push(section);
 			return () => {
-				const index = guards.indexOf(guard);
-				if (index !== -1) guards.splice(index, 1);
+				const index = sections.indexOf(section);
+				if (index !== -1) sections.splice(index, 1);
 			};
 		},
 	};
@@ -217,6 +251,7 @@ const cordis = new Context();
 const settings = createSettingsStub();
 const commands = createCommandsStub();
 const tools = createToolsStub();
+const systemPrompt = createSystemPromptStub();
 const hookAgent = {
 	id: "agent-integration",
 	session: { header: { id: "session-integration", cwd: root } },
@@ -224,25 +259,86 @@ const hookAgent = {
 cordis.provide("settings", settings);
 cordis.provide("commands", commands);
 cordis.provide("tools", tools);
+cordis.provide("systemPrompt", systemPrompt);
+
+// Captured before the plugin loads so the asynchronous policy listener is
+// driven exactly the way the tool pipeline drives it.
+const preExecutors = [];
+cordis.on("internal/listener", (eventName, listener) => {
+	if (eventName === "tools/pre-execute") preExecutors.push(listener);
+});
 
 const hostModule = await import(
 	pathToFileURL(join(root, "src", "host", "index.mjs")).href
 );
-await cordis.plugin(hostModule);
+// Resolve the config the same way the Loader does, then hand the very refs to
+// apply, so applySettings below commits into the live mount, not a copy.
+const config = hostModule.Config["~standard"].validate({}).value;
+await cordis.plugin({
+	name: hostModule.name,
+	inject: hostModule.inject,
+	apply: (ctx) => hostModule.apply(ctx, config),
+});
 
 test.after(async () => {
 	await cordis.stop?.();
 	await rm(home, { recursive: true, force: true });
 });
 
-test("registers the coding-doc-standard settings namespace with the full schema", async () => {
-	const registration = await waitFor(
-		async () => settings.registrations[0] ?? null,
-		"settings registration",
+test("serves the coding-doc-standard settings document with the full schema", async () => {
+	await waitFor(
+		async () => settings.presentations.length > 0 || null,
+		"settings presentation",
 	);
-	assert.equal(registration.namespace, "coding-doc-standard");
-	const schemaKeys = Object.keys(registration.schema.dict ?? {});
-	assert.deepEqual(schemaKeys.sort(), [...POLICY_KEYS].sort());
+	assert.deepEqual(settings.presentations, [{ auto: false }]);
+	assert.deepEqual(Object.keys(config).sort(), [...CONFIG_KEYS].sort());
+	for (const key of CONFIG_KEYS)
+		assert.equal(
+			typeof config[key]?.get,
+			"function",
+			`volatile ref for ${key}`,
+		);
+});
+
+test("serves the registry-driven pack catalog to the settings page", async () => {
+	const catalog = JSON.parse(config.packCatalog.get());
+	const byId = new Map(catalog.packs.map((pack) => [pack.id, pack]));
+	assert.deepEqual([...byId.keys()].sort(), [
+		"c",
+		"cpp",
+		"csharp",
+		"dart",
+		"docker-compose",
+		"go",
+		"haskell",
+		"java",
+		"kotlin",
+		"lua",
+		"php",
+		"python",
+		"ruby",
+		"rust",
+		"scala",
+		"shell",
+		"swift",
+		"typescript-javascript",
+	]);
+	// Only formatter-only packs address the legacy policy field; every pack
+	// that discovers units owns its documentation through the packs field.
+	assert.equal(byId.get("lua").legacyDocsKey, null);
+	const py = byId.get("python").legacyDocsKey;
+	assert.equal(py, "python");
+	const ts = byId.get("typescript-javascript").legacyDocsKey;
+	assert.equal(ts, "typescriptJavascript");
+	const compose = byId.get("docker-compose").legacyDocsKey;
+	assert.equal(compose, "dockerCompose");
+	for (const pack of catalog.packs) {
+		assert.ok(pack.label, `${pack.id} label`);
+		for (const profile of pack.profiles) {
+			assert.ok(profile.languageVersions, `${pack.id} version range`);
+		}
+	}
+	assert.deepEqual(catalog.stale, []);
 });
 
 test("registers the workspace verifier as a DSH command", async () => {
@@ -276,6 +372,7 @@ test("registers and executes the format_code agent tool", async () => {
 			tools.registrations.find((entry) => entry.name === "format_code"),
 		"format_code registration",
 	);
+	const dispatchedBefore = tools.calls.length;
 	const result = await definition.execute(
 		{
 			language: "typescript",
@@ -286,10 +383,36 @@ test("registers and executes the format_code agent tool", async () => {
 	);
 	assert.equal(result.changed, true);
 	assert.equal(result.formatter, "biome");
-	assert.equal(result.formatted_content, "export const value = 1;\r\n");
+	// Biome writes the platform end of line, so pin the content, not the EOL.
+	assert.match(result.formatted_content, /^export const value = 1;\r?\n$/u);
 	const rendered = definition.output.render({}, result);
-	assert.match(JSON.stringify(rendered), /formatted_content/u);
-	assert.match(JSON.stringify(rendered), /changed/u);
+	assert.equal(rendered.length, 1);
+	assert.equal(rendered[0].type, "text");
+	assert.match(rendered[0].text, /^Formatted pending\.ts via biome/u);
+	assert.match(rendered[0].text, /Not written: this was a preview\./u);
+	assert.match(rendered[0].text, /Documentation check: [a-z]+\./u);
+	assert.match(
+		rendered[0].text,
+		/call write_formatted to write it once the checks pass/u,
+	);
+	assert.equal(
+		tools.calls.length,
+		dispatchedBefore,
+		"format_code must never write",
+	);
+	assert.deepEqual(Array.from(definition.parameters.required).sort(), [
+		"content",
+		"file_path",
+		"language",
+	]);
+	assert.equal(definition.parameters.properties.apply, undefined);
+	assert.deepEqual(definition.parameters.properties.language.enum, [
+		"python",
+		"typescript",
+		"javascript",
+		"docker-compose",
+		"rust",
+	]);
 });
 
 test("runs the workspace verifier through the DSH command handler", async () => {
@@ -308,43 +431,42 @@ test("runs the workspace verifier through the DSH command handler", async () => 
 test("persists the effective policy and follows settings changes", async () => {
 	const initial = await waitFor(readDurablePolicy, "durable policy file");
 	assert.equal(initial.formatOnWrite, true);
-	settings.change({
-		formatOnWrite: false,
-		formatPython: false,
-		go: true,
-		shell: true,
-		php: true,
-		ruby: true,
-		swift: true,
-		dart: true,
-		haskell: true,
-		lua: true,
-		scala: true,
-		scalaHookCommand: "scala-doc-adapter",
-		scalaHookArgs: '["--project","."]',
-		scalaHookCwd: "project",
-		scalaHookTimeoutMs: 12_000,
-	});
-	const updated = await waitFor(async () => {
-		const policy = await readDurablePolicy();
-		if (policy?.formatOnWrite !== false) return null;
-		if (!policy?.publicUnitDocs?.scala) return null;
-		if (policy?.publicUnitAdapters?.scala?.command !== "scala-doc-adapter")
-			return null;
-		if (
-			!policy.languages?.go ||
-			!policy.languages?.shell ||
-			!policy.languages?.php ||
-			!policy.languages?.ruby ||
-			!policy.languages?.swift ||
-			!policy.languages?.dart ||
-			!policy.languages?.haskell ||
-			!policy.languages?.lua ||
-			!policy.languages?.scala
-		)
-			return null;
-		return policy;
-	}, "durable policy update");
+	const updated = await applySettings(
+		{
+			formatOnWrite: false,
+			formatPython: false,
+			go: true,
+			shell: true,
+			php: true,
+			ruby: true,
+			swift: true,
+			dart: true,
+			haskell: true,
+			lua: true,
+			scala: true,
+			scalaHookCommand: "scala-doc-adapter",
+			scalaHookArgs: '["--project","."]',
+			scalaHookCwd: "project",
+			scalaHookTimeoutMs: 12_000,
+		},
+		(policy) => {
+			if (policy.formatOnWrite !== false) return false;
+			if (!policy.publicUnitDocs?.scala) return false;
+			if (policy.publicUnitAdapters?.scala?.command !== "scala-doc-adapter")
+				return false;
+			return Boolean(
+				policy.languages?.go &&
+					policy.languages?.shell &&
+					policy.languages?.php &&
+					policy.languages?.ruby &&
+					policy.languages?.swift &&
+					policy.languages?.dart &&
+					policy.languages?.haskell &&
+					policy.languages?.lua &&
+					policy.languages?.scala,
+			);
+		},
+	);
 	assert.equal(updated.formatPython, false);
 	assert.equal(updated.languages.go, true);
 	assert.equal(updated.languages.shell, true);
@@ -360,37 +482,360 @@ test("persists the effective policy and follows settings changes", async () => {
 });
 
 /**
- * Evaluates the registered global native guards for one pending tool execution.
+ * Commits flat Config edits into the live refs and waits until the durable
+ * policy reflects them, exactly the way the Loader commits a volatile-only
+ * profile change.
+ *
+ * @param {Record<string, unknown>} values - Top-level Config fields to change.
+ * @param {(policy: Record<string, any>) => boolean} settled - Predicate over the persisted policy.
+ * @returns {Promise<Record<string, any>>} The settled policy.
+ */
+async function applySettings(values, settled) {
+	for (const [key, next] of Object.entries(values))
+		updateVolatile(config[key], createVolatile(next));
+	cordis.emit("loader/volatile-update", Object.keys(values));
+	return waitFor(
+		async () => {
+			const policy = await readDurablePolicy();
+			return policy && settled(policy) ? policy : null;
+		},
+		`policy after ${Object.keys(values).join(", ")}`,
+	);
+}
+
+/**
+ * Drives one pending tool call through the registered pre-execute policy.
  *
  * @param {object} agent - Agent associated with the execution.
  * @param {string} toolName - Tool name to evaluate.
  * @param {Record<string, unknown>} toolInput - Tool input for the candidate validator.
- * @returns {{kind: 'allow'} | {kind: 'deny', reason: string}} Native guard outcome.
+ * @param {Record<string, unknown>} [extra] - Extra execution fields, such as a deferContext spy.
+ * @returns {Promise<{kind: string, reason?: string}>} The pre-execute decision.
  */
-function preExecute(agent, toolName, toolInput) {
-	const execution = { agent, arguments: toolInput, name: toolName };
-	const reason = tools.guards.map((guard) => guard(execution)).find(Boolean);
-	return reason ? { kind: "deny", reason } : { kind: "allow" };
+async function preExecute(agent, toolName, toolInput, extra = {}) {
+	const execution = {
+		callId: `call-${toolName}`,
+		name: toolName,
+		arguments: toolInput,
+		agent,
+		signal: new AbortController().signal,
+		...extra,
+	};
+	let decision = { kind: "allow" };
+	for (const listener of preExecutors) {
+		decision = (await listener(execution, async () => ({ kind: "allow" }))) ?? {
+			kind: "allow",
+		};
+		if (decision.kind !== "allow") return decision;
+	}
+	return decision;
 }
 
-test("blocks an undocumented namespaced TypeScript write through the native guard", async () => {
+test("registers one asynchronous pre-execute policy and no sync guard", () => {
+	assert.equal(preExecutors.length, 1);
+});
+
+test("skips the gate for the write that write_formatted dispatches itself", async () => {
+	const messy = {
+		file_path: "src/messy.ts",
+		content: "export    const undocumented  =  compute( 1 ,2 )\n",
+	};
+	try {
+		await applySettings(
+			{ formatOnWrite: true, formatTypescriptJavascript: true },
+			(policy) =>
+				policy.formatOnWrite === true &&
+				policy.formatTypescriptJavascript === true &&
+				policy.publicUnitDocs?.typescriptJavascript === true,
+		);
+		const definition = await waitFor(
+			async () =>
+				tools.registrations.find((entry) => entry.name === "write_formatted") ??
+				null,
+			"write_formatted registration",
+		);
+		let stampedParent = null;
+		let nested = null;
+		let loose = null;
+		tools.onExecute = async (input) => {
+			stampedParent = input.parent;
+			nested = await preExecute(hookAgent, "write", messy, {
+				parent: input.parent,
+			});
+			loose = await preExecute(hookAgent, "write", messy);
+		};
+		const receipt = await definition.execute(
+			{
+				file_path: "src/self-dispatch.ts",
+				content: COMPLIANT_TS,
+				language: "typescript",
+			},
+			{
+				callId: "call-write-formatted",
+				token: "tok-self-dispatch",
+				agent: hookAgent,
+				signal: new AbortController().signal,
+			},
+		);
+		assert.equal(receipt.applied, true, JSON.stringify(receipt));
+		assert.equal(tools.calls.length, 1);
+		assert.equal(stampedParent, "tok-self-dispatch");
+		assert.equal(nested.kind, "allow", JSON.stringify(nested));
+		assert.equal(loose.kind, "deny", JSON.stringify(loose));
+		assert.equal(tools.calls.length, 1, "a skipped check must not dispatch");
+	} finally {
+		tools.onExecute = null;
+		await applySettings(
+			{ formatOnWrite: false },
+			(policy) => policy.formatOnWrite === false,
+		);
+	}
+});
+
+test("advises the model through the system prompt by default", async () => {
+	const section = await waitFor(
+		async () =>
+			systemPrompt.sections.find(({ name }) =>
+				name.endsWith("coding-doc-standard"),
+			) ?? null,
+		"system-prompt advisory",
+	);
+	assert.match(section.text, /skill coding-doc-standard/u);
+	assert.match(section.text, /format_code/u);
+	assert.ok(section.order > 0);
+});
+
+test("toggles the system-prompt advisory with its setting", async () => {
+	await applySettings(
+		{ systemPromptAdvisory: false },
+		(policy) => policy.systemPromptAdvisory === false,
+	);
+	await waitFor(
+		async () => (systemPrompt.sections.length === 0 ? true : null),
+		"advisory removal",
+	);
+	await applySettings(
+		{ systemPromptAdvisory: true },
+		(policy) => policy.systemPromptAdvisory === true,
+	);
+	await waitFor(
+		async () => (systemPrompt.sections.length === 1 ? true : null),
+		"advisory restore",
+	);
+});
+
+test("aggregates every pass into one denial", async () => {
+	try {
+		await applySettings(
+			{ formatOnWrite: true, formatTypescriptJavascript: true },
+			(policy) =>
+				policy.formatOnWrite === true &&
+				policy.formatTypescriptJavascript === true &&
+				policy.publicUnitDocs?.typescriptJavascript === true,
+		);
+		const result = await preExecute(hookAgent, "write", {
+			file_path: "src/messy.ts",
+			content: "export    const undocumented  =  compute( 1 ,2 )\n",
+		});
+		assert.equal(result.kind, "deny");
+		const reason = String(result.reason);
+		assert.match(reason, /\[doc-standard\]/u);
+		assert.match(reason, /issue\(s\) block writing src\/messy\.ts/u);
+		assert.match(reason, /\[public units\]/u);
+		assert.match(reason, /\[packs\]/u);
+		assert.match(reason, /\[formatting\]/u);
+		assert.match(reason, /Formatting: call write_formatted/u);
+		assert.match(
+			reason,
+			/coding-doc-standard-typescript-javascript pack skill/u,
+		);
+		assert.match(reason, /\/coding-doc-verify/u);
+	} finally {
+		await applySettings(
+			{ formatOnWrite: false },
+			(policy) => policy.formatOnWrite === false,
+		);
+	}
+});
+
+test("blocks an undocumented namespaced TypeScript write", async () => {
 	const result = await preExecute(hookAgent, "functions.write", {
 		file_path: "src/undocumented.ts",
 		content: UNDOCUMENTED_TS,
 	});
 	assert.equal(result.kind, "deny");
-	assert.match(String(result.reason), /doc-standard/);
+	assert.match(String(result.reason), /doc-standard/u);
 });
 
 test("allows a documented and formatted namespaced TypeScript write", async () => {
-	const result = await preExecute(hookAgent, "functions.write", {
+	const result = await preExecute(hookAgent, "write", {
 		file_path: "src/integration-example.ts",
 		content: COMPLIANT_TS,
 	});
 	assert.equal(result.kind, "allow");
 });
 
-test("enforces the opt-in Go header through the native guard", async () => {
+test("never blocks vendored, generated, or minified paths", async () => {
+	for (const path of [
+		"node_modules/pkg/bad.ts",
+		"dist/bad.js",
+		"coverage/app.ts",
+		"src/generated/api.py",
+		"assets/app.min.js",
+		"src/types/manual.d.ts",
+		"package-lock.json",
+	]) {
+		const result = await preExecute(hookAgent, "write", {
+			file_path: path,
+			content: UNDOCUMENTED_TS,
+		});
+		assert.equal(result.kind, "allow", path);
+	}
+});
+
+test("allows a candidate that cannot be materialized", async () => {
+	const result = await preExecute(hookAgent, "edit", {
+		file_path: "src/never-created.ts",
+		old_string: "e",
+		new_string: "x",
+	});
+	assert.equal(result.kind, "allow");
+	assert.doesNotMatch(String(result.reason ?? ""), /doc-standard/u);
+});
+
+test("fails open with a visible notice when the budget is exhausted", async () => {
+	const notices = [];
+	try {
+		// The TypeScript pack formats through a Biome subprocess, so a 1 ms
+		// budget cannot outlive it. The candidate itself is compliant, which
+		// keeps the only signal in the report the unfinished check.
+		await applySettings(
+			{
+				validatorTimeoutMs: 1,
+				typescriptJavascript: true,
+				formatOnWrite: true,
+				formatTypescriptJavascript: true,
+			},
+			(policy) =>
+				policy.validatorTimeoutMs === 1 &&
+				policy.languages?.typescriptJavascript === true &&
+				policy.formatOnWrite === true &&
+				policy.formatTypescriptJavascript === true,
+		);
+		const result = await preExecute(
+			hookAgent,
+			"write",
+			{ file_path: "src/slow_but_compliant.ts", content: COMPLIANT_TS },
+			{ deferContext: (message) => notices.push(message) },
+		);
+		assert.equal(result.kind, "allow", JSON.stringify(result));
+		assert.equal(notices.length, 1);
+		const notice = notices[0];
+		assert.equal(notice.role, "user");
+		assert.equal(notice.source.kind, "plugin");
+		assert.equal(notice.source.plugin, "coding-doc-standard");
+		assert.equal(notice.source.form, "notice");
+		assert.ok(notice.source.summary.length <= 120);
+		assert.match(notice.content[0].text, /doc-standard/u);
+	} finally {
+		await applySettings(
+			{ validatorTimeoutMs: 20_000 },
+			(policy) => policy.validatorTimeoutMs === 20_000,
+		);
+	}
+});
+
+test("fails closed when validatorFailOpen is off", async () => {
+	try {
+		await applySettings(
+			{
+				validatorTimeoutMs: 1,
+				validatorFailOpen: false,
+				typescriptJavascript: true,
+				formatOnWrite: true,
+				formatTypescriptJavascript: true,
+			},
+			(policy) =>
+				policy.validatorFailOpen === false &&
+				policy.validatorTimeoutMs === 1 &&
+				policy.languages?.typescriptJavascript === true &&
+				policy.formatOnWrite === true &&
+				policy.formatTypescriptJavascript === true,
+		);
+		const result = await preExecute(hookAgent, "write", {
+			file_path: "src/slow_but_compliant.ts",
+			content: COMPLIANT_TS,
+		});
+		assert.equal(result.kind, "deny", JSON.stringify(result));
+		assert.match(String(result.reason), /validatorFailOpen/u);
+	} finally {
+		await applySettings(
+			{ validatorTimeoutMs: 20_000, validatorFailOpen: true },
+			(policy) =>
+				policy.validatorFailOpen === true &&
+				policy.validatorTimeoutMs === 20_000,
+		);
+	}
+});
+
+test("honors a custom matchedTools list", async () => {
+	try {
+		await applySettings(
+			{ matchedTools: "functions.write" },
+			(policy) => policy.matchedTools?.[0] === "functions.write",
+		);
+		const untouched = await preExecute(hookAgent, "write", {
+			file_path: "src/undocumented.ts",
+			content: UNDOCUMENTED_TS,
+		});
+		assert.equal(untouched.kind, "allow");
+		const guarded = await preExecute(hookAgent, "functions.write", {
+			file_path: "src/undocumented.ts",
+			content: UNDOCUMENTED_TS,
+		});
+		assert.equal(guarded.kind, "deny");
+	} finally {
+		await applySettings(
+			{ matchedTools: "write, edit, functions.write, functions.edit" },
+			(policy) => (policy.matchedTools?.length ?? 0) === 4,
+		);
+	}
+});
+
+test("adds custom ignored paths on top of the built-in list", async () => {
+	try {
+		await applySettings(
+			{ ignoredPaths: "src/scratch/**" },
+			(policy) => policy.ignoredPaths?.[0] === "src/scratch/**",
+		);
+		const scratch = await preExecute(hookAgent, "write", {
+			file_path: "src/scratch/whatever.ts",
+			content: UNDOCUMENTED_TS,
+		});
+		assert.equal(scratch.kind, "allow");
+		const vendored = await preExecute(hookAgent, "write", {
+			file_path: "node_modules/pkg/bad.ts",
+			content: UNDOCUMENTED_TS,
+		});
+		assert.equal(vendored.kind, "allow");
+		await applySettings(
+			{ ignoredPaths: "" },
+			(policy) => (policy.ignoredPaths ?? ["x"]).length === 0,
+		);
+		const back = await preExecute(hookAgent, "write", {
+			file_path: "src/scratch/whatever.ts",
+			content: UNDOCUMENTED_TS,
+		});
+		assert.equal(back.kind, "deny");
+	} finally {
+		await applySettings(
+			{ ignoredPaths: "" },
+			(policy) => (policy.ignoredPaths ?? ["x"]).length === 0,
+		);
+	}
+});
+
+test("enforces the opt-in Go header through the pre-execute policy", async () => {
 	const missing = await preExecute(hookAgent, "functions.write", {
 		file_path: "src/example.go",
 		content: "package example\n",
@@ -407,7 +852,7 @@ package example
 	assert.equal(documented.kind, "allow");
 });
 
-test("enforces the opt-in PHP header through the native guard", async () => {
+test("enforces the opt-in PHP header through the pre-execute policy", async () => {
 	const missing = await preExecute(hookAgent, "functions.write", {
 		file_path: "src/Example.php",
 		content: "<?php\nfinal class Example {}\n",
@@ -418,6 +863,7 @@ test("enforces the opt-in PHP header through the native guard", async () => {
 		content: `<?php
 /**
  * @author Perijn Huijser
+ * Summary: Demonstrates an opt-in PHP source header.
  * Usage: Demonstrates an opt-in PHP source header.
  */
 
@@ -428,7 +874,7 @@ final class Example {}
 	assert.equal(documented.kind, "allow");
 });
 
-test("enforces the opt-in Haskell module header through the native guard", async () => {
+test("enforces the opt-in Haskell header through the pre-execute policy", async () => {
 	const missing = await preExecute(hookAgent, "functions.write", {
 		file_path: "src/Example.hs",
 		content: "module Example where\n",
@@ -447,12 +893,12 @@ module Example where
 	assert.equal(documented.kind, "allow");
 });
 
-test("applies the global guard to every agent identity", () => {
+test("applies the policy to every agent identity", async () => {
 	const secondAgent = {
 		id: "agent-integration-second",
 		session: { header: { id: "session-integration-second", cwd: root } },
 	};
-	const result = preExecute(secondAgent, "functions.write", {
+	const result = await preExecute(secondAgent, "write", {
 		file_path: "src/second-undocumented.ts",
 		content: UNDOCUMENTED_TS,
 	});
@@ -464,4 +910,10 @@ test("does not intercept tools outside the write and edit matcher", async () => 
 		file_path: "src/undocumented.ts",
 	});
 	assert.equal(result.kind, "allow");
+});
+
+test("keeps the host free of synchronous child processes", async () => {
+	const source = await readFile(join(root, "src", "host", "index.mjs"), "utf8");
+	assert.doesNotMatch(source, /spawnSync/u);
+	assert.doesNotMatch(source, /tools\.guard\(/u);
 });

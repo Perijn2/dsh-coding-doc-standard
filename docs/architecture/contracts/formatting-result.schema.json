@@ -1,0 +1,62 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://dsh.dev/rs/schema/formatting-result.json",
+  "title": "Formatting result",
+  "description": "Structured outcome of one formatter adapter invocation.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "result"
+  ],
+  "properties": {
+    "result": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "clean": {
+          "type": "boolean"
+        },
+        "formatted_content": {
+          "type": "string"
+        },
+        "exit_code": {
+          "type": "integer"
+        },
+        "diagnostics": {
+          "type": "string"
+        },
+        "adapter": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "adapter",
+        "clean"
+      ]
+    }
+  },
+  "x-governed": {
+    "requirements": [
+      "REQ-028",
+      "REQ-029",
+      "REQ-030"
+    ],
+    "adrs": [
+      "ADR-0004"
+    ]
+  },
+  "x-authored": {
+    "statements": [
+      "object result",
+      "boolean result.clean",
+      "string result.formatted_content",
+      "integer result.exit_code",
+      "string result.diagnostics",
+      "string result.adapter",
+      "required result",
+      "required result.clean",
+      "required result.adapter",
+      "closed result"
+    ]
+  }
+}

@@ -1,0 +1,30 @@
+{
+	"id": "modern",
+	"languageVersions": ">=0",
+	"policyLanguage": "ruby",
+	"extensions": [".rb"],
+	"preamble": {
+		"shebang": true
+	},
+	"codec": {
+		"headerSyntax": "line",
+		"headerToken": "#",
+		"fields": {
+			"author": "Author:",
+			"summary": "Summary:",
+			"description": "Description:",
+			"usage": "Usage:",
+			"changelog": "Changelog:",
+			"notes": "Notes:"
+		}
+	},
+	"units": {
+		"provider": "tree-sitter",
+		"grammar": "ruby",
+		"query": "queries/units.scm",
+		"docBinding": {
+			"syntax": "line",
+			"token": "#"
+		}
+	}
+}
