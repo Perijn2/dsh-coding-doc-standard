@@ -54,6 +54,16 @@ one problem at a time.
   including globs such as `mcp__*__write_file`, for write paths beyond the
   bundled names.
 
+For source edits, use `edit_formatted` with `file_path`, `old_string`,
+`new_string`, and `language`; optional `replace_all` replaces every match, and
+`formatter_args` forwards formatter options. It applies the edit in memory,
+formats the whole file, checks documentation, then commits through the native
+edit tool. Missing or ambiguous matches and failed checks prevent writing; a
+change that invalidates the original snapshot is refused instead of overwritten.
+
+Use `write_formatted` for complete-file writes and `format_code` for a read-only
+preview. Both formatted write tools share the same language routing and checks.
+
 The full knob list is in [`docs/architecture.md`](docs/architecture.md).
 
 ## Supported profiles
@@ -76,6 +86,18 @@ individually in the plugin settings. TypeScript and JavaScript routing includes
 
 Compose documentation uses root and service-adjacent YAML comments. It does not
 require `x-...` extension fields for prose.
+
+## Declaration naming
+
+Profiles with a selected language style guide also block nonconforming declaration
+names before writes and during detailed path verification. Diagnostics identify
+the declaration, expected casing, and guide URL. Checks use syntax trees, not
+text replacements; no symbols or references are renamed.
+
+See [naming guides and coverage](docs/naming.md) for checked languages, declaration
+kinds, exceptions, and languages without a selected naming standard. Naming shares
+the existing language/profile enable switches and generated/vendor exemptions in
+the write gate. This is a casing check, not full semantic style-guide compliance.
 
 ## Install
 

@@ -12,6 +12,8 @@ Boundaries: packs carry no executable hook code — executable behavior enters o
 
 Delivered in phases: Phase 1 registry + contract engine + codec + providers + Lua pilot; Phase 2 formatter declarations + skill composition + Go/Shell ports; Phase 3 Python/TS/C++/Compose ports and checker.py removal; Phase 4 pack distribution.
 
+Per ADR-0008 the file-header syntax itself is pack-declared data: a profile codec names its syntax (`line`, `block`, or `docstring`), its open/close/continuation tokens, its tag-drop and unlabeled-prose routing, its preamble patterns, and a spelling list per contract field. Formatter-only packs may carry a codec and then own the file header, while their unit verdicts stay with the existing passes, which no longer rejudge a covered header (checker `--header-covered`). The universal header contract is Author and Summary (REQ-038); tree-sitter remains reserved for unit discovery.
+
 ## Acceptance Criteria
 
 - A language is portable by adding one pack directory with no engine source edits.

@@ -21,11 +21,11 @@ are listed per phase.
 
 | Test id | Level | Requirement(s) | Description and assertion |
 | --- | --- | --- | --- |
-| DC-01 | unit | REQ-005, REQ-008 | A decoded document without Author, Summary, or Description yields one finding per missing field, naming each field. |
-| DC-02 | unit | REQ-005 | Optional fields (Usage, Changelog, Notes) absent produce no findings. |
+| DC-01 | unit | REQ-038, REQ-008 | A decoded document without Author or Summary yields one finding per missing field, naming each field's primary spelling; a missing Description yields none. |
+| DC-02 | unit | REQ-038, REQ-005 | Optional fields (Description, Usage, Changelog, Notes) absent produce no findings. |
 | DC-03 | unit | REQ-006 | Summaries of 1, 2, and 4 sentences all pass; brevity is never a sentence-count failure. |
-| DC-04 | unit | REQ-007 | Usage present and referencing a discovered unit name passes. |
-| DC-05 | unit | REQ-007 | Usage present but referencing no discovered unit name yields one Usage finding. |
+| DC-04 | unit | REQ-038 | Usage present and referencing a discovered unit name passes. |
+| DC-05 | unit | REQ-038 | Usage present but referencing no unit yields no finding: the Usage reference rule is retired. |
 | DC-06 | unit | REQ-008 | Empty-string header fields are treated as absent and named in findings. |
 | DC-07 | unit | REQ-009 | A unit doc missing Summary yields a finding; missing Parameters when the unit declares parameters yields a finding. |
 | DC-08 | unit | REQ-009 | Returns/Errors findings appear only when meaningful (declared return type / thrown errors), per profile capability flags. |
@@ -100,6 +100,31 @@ are listed per phase.
 | WG-04 | integration | REQ-027 | A pack whose provider throws is contained: remaining packs' findings still appear in the same report. |
 | WG-05 | integration | REQ-025 … REQ-027 | The documentation write path spawns no interpreter process (no `py`/`python3` child) for packed languages. |
 | WG-06 | regression | REQ-025 … REQ-027 | The existing 135-case suite keeps passing through each migration phase. |
+
+## 7a. Pack-governed doc syntax (REQ-032 … REQ-038)
+
+| Test id | Level | Requirement(s) | Description and assertion |
+| --- | --- | --- | --- |
+| DS-01 | unit | REQ-032 | A pack whose profile declares the header tokens decodes the header with no engine language branch consulted (pack syntax is the sole source). |
+| DS-02 | unit | REQ-033 | A `line` profile (`---`, `#`) and a `block` profile (`/** … */`) each extract their leading header; the wrong syntax yields no header. |
+| DS-03 | unit | REQ-033 | A `docstring` profile extracts the module docstring as its header. |
+| DS-04 | unit | REQ-034 | A field with a spelling list resolves on any accepted spelling and reports the first spelling when missing. |
+| DS-05 | unit | REQ-035 | A header line beginning with the declared tag sigil that matches no field is decoded as no content; unlabeled prose appends to the designated field. |
+| DS-06 | integration | REQ-036 | Every installed pack's golden `example` file passes that pack's own header check; a broken example fails the suite. |
+| DS-07 | integration | REQ-037 | For a header-only pack, the checker pass still reports unit findings but no longer reports the pack-owned header labels (no duplicate). |
+| DS-08 | integration | REQ-038 | A conformant file whose header omits Usage writes cleanly; one missing the author is denied naming the pack's author spelling. |
+
+## 7b. Checker removal via pack providers (REQ-039 … REQ-042)
+
+| Case | Requirement | Given | When | Then |
+| --- | --- | --- | --- | --- |
+| CR-01 | REQ-039 | A pack exists for every formerly checker-covered family | Any covered-path write is validated | No `documentation` pass runs and `src/hook/checker.py` is absent |
+| CR-02 | REQ-040 | A gated write targets a covered path | The gate completes its decision | No interpreter child was spawned for documentation checking |
+| CR-03 | REQ-041 | A Python file defines public and underscore-prefixed functions | The Python pack discovers units | Only non-underscore units are enforced; each needs a docstring with a summary |
+| CR-04 | REQ-041 | A Compose file lists a service with and one without a preceding summary comment | The Compose pack discovers units | Only the uncommented service is reported |
+| CR-05 | REQ-042 | A Python docstring omits a Parameters section for a two-argument function | The pack unit check runs | Presence and summary are judged; name cross-matching is not reported |
+| CR-06 | REQ-039 | Each family pack's golden `skill/example.*` | The golden self-test decodes and checks it | Zero findings for every installed pack |
+| CR-07 | REQ-039 | A header-less file of each formerly covered family | The pack path validates it | Denied with the family's declared first spellings |
 
 ## 8. Contracts as tests
 

@@ -2,7 +2,7 @@
   "schema": "https://dsh.dev/rs/schema/requirement-record.json",
   "slug": "doc-contract",
   "generated_by": "dsh-repo-standard P2",
-  "requirement_count": 5,
+  "requirement_count": 6,
   "requirements": [
     {
       "id": "REQ-005",
@@ -56,6 +56,17 @@
       "text": "The System shall enforce the same public-unit contract of a Summary plus Parameters, Returns, and Errors sections where each is meaningful for every supported language.",
       "implements_adrs": [
         "ADR-0002"
+      ],
+      "status": "draft"
+    },
+    {
+      "id": "REQ-038",
+      "slug": "doc-contract",
+      "priority": "MUST",
+      "ears_pattern": "ubiquitous",
+      "text": "The System shall require only the Author and Summary fields in a file header and shall treat Description, Usage, Changelog, and Notes as optional content carrying no checking obligation, superseding the Description requirement of REQ-005 and the Usage reference rule of REQ-007.",
+      "implements_adrs": [
+        "ADR-0008"
       ],
       "status": "draft"
     }

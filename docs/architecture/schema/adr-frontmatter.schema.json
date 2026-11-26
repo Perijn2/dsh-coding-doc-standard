@@ -1,0 +1,85 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://dsh.dev/rs/schema/adr-frontmatter.json",
+  "title": "ADR front matter for dsh-repo-standard",
+  "description": "MADR 4.0.0 metadata plus the pinning fields this standard adds. The extension is in the front matter only; the MADR section structure is never modified. Source template: adr/madr template/adr-template.md (fetched 2026-09-26).",
+  "type": "object",
+  "required": ["id", "status", "date", "requirements", "verification"],
+  "additionalProperties": false,
+  "properties": {
+    "id": {
+      "type": "string",
+      "pattern": "^ADR-[0-9]{4}$",
+      "description": "Four-digit zero-padded number allocated by CAS on refs/rs/adr-counter. Never hand-assigned after P0 seeding."
+    },
+    "status": {
+      "type": "string",
+      "enum": ["proposed", "accepted", "provisional", "deprecated", "superseded"],
+      "description": "'provisional' is this standard's extension: the decision is made but rests on something not yet verified on this machine. See the 'provisional_basis' field, which is mandatory when status is provisional."
+    },
+    "date": { "type": "string", "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}$" },
+    "deciders": {
+      "type": "array",
+      "items": { "type": "string" },
+      "description": "MADR 'decision-makers'. Owner decisions are recorded as 'owner'."
+    },
+    "consulted": { "type": "array", "items": { "type": "string" } },
+    "informed": { "type": "array", "items": { "type": "string" } },
+    "requirements": {
+      "type": "array",
+      "minItems": 1,
+      "items": { "type": "string", "pattern": "^REQ-[0-9]{3}$" },
+      "description": "Pin edge ADR -> REQ. Every element must resolve to a requirement declared in some requirements/<slug>/spec.md, else gate G2 fails."
+    },
+    "diagrams": {
+      "type": "array",
+      "items": { "type": "string" },
+      "description": "Diagram slugs under docs/architecture/diagrams/ that depict this decision."
+    },
+    "supersedes": {
+      "type": ["array", "null"],
+      "items": { "type": "string", "pattern": "^ADR-[0-9]{4}$" }
+    },
+    "superseded_by": { "type": ["string", "null"], "pattern": "^ADR-[0-9]{4}$" },
+    "verification": {
+      "type": "string",
+      "minLength": 20,
+      "description": "MADR 'Confirmation', mandatory here. Must name a check that can actually be run or observed. 'It works' is not verification."
+    },
+    "provisional_basis": {
+      "type": ["string", "null"],
+      "description": "Required when status == 'provisional'. States exactly what is unverified and what would verify it."
+    },
+    "evidence": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["claim", "artifact"],
+        "additionalProperties": false,
+        "properties": {
+          "claim": { "type": "string" },
+          "artifact": { "type": "string", "description": "File path, command, byte offset, URL, or quoted output that substantiates the claim." },
+          "verified": { "type": "string", "enum": ["yes", "no", "owner", "unknown"] }
+        }
+      }
+    }
+  },
+  "allOf": [
+    {
+      "if": { "properties": { "status": { "const": "provisional" } } },
+      "then": { "required": ["provisional_basis"] }
+    }
+  ],
+  "x-required-sections": [
+    "Context and Problem Statement",
+    "Considered Options",
+    "Decision Outcome",
+    "Consequences",
+    "Confirmation"
+  ],
+  "x-optional-sections": [
+    "Decision Drivers",
+    "Pros and Cons of the Options",
+    "More Information"
+  ]
+}

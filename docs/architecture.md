@@ -160,9 +160,11 @@ checked against. `languageOfExtension` resolves what a path says it is with
 every formatter toggle forced on, so a workspace that switched a language off
 cannot hide what the bytes are. A contradiction is refused with both readings
 and the skill reference for that path, rather than formatting one language's
-bytes with another language's parser. A Rust path is refused because `rustfmt`
-belongs to the project toolchain, and a path no managed formatter is wired up
-for is refused in favour of the plain `write` tool, which still gates it. Where
+bytes with another language's parser. A Rust path is not special-cased: the
+Rust pack declares `rustfmt` through the `external-command` adapter, so the
+tools format `.rs` through the project toolchain exactly when `formatRust` is
+on, and a path no pack declares a formatter for is refused in favour of the
+plain `write` tool, which still gates it. Where
 the policy keeps the formatter for a declared language switched off,
 `write_formatted` writes the candidate documentation-checked exactly as sent
 and reports `formatter: "none"`, while `format_code` refuses it: a preview of

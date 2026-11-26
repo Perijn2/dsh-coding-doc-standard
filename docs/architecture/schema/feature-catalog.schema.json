@@ -1,0 +1,25 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://dsh.dev/rs/schema/feature-catalog.json",
+  "title": "Feature catalog for dsh-repo-standard",
+  "type": "object",
+  "required": ["features"],
+  "additionalProperties": false,
+  "properties": {
+    "features": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["slug", "name", "branch_id", "status", "record"],
+        "additionalProperties": false,
+        "properties": {
+          "slug": { "type": "string", "pattern": "^[a-z0-9]+(?:-[a-z0-9]+)*$" },
+          "name": { "type": "string", "minLength": 1 },
+          "branch_id": { "type": "string", "minLength": 1 },
+          "status": { "type": "string", "enum": ["open", "closed"] },
+          "record": { "type": "string", "pattern": "^[a-z0-9]+(?:-[a-z0-9]+)*/feature\\.json$" }
+        }
+      }
+    }
+  }
+}
