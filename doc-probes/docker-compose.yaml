@@ -1,0 +1,19 @@
+# Author: Perijn Huijser
+# Summary: Serve the label mapping demo API.
+#
+# Description:
+#   Design rationale: one service, no persistent state — deleting the stack
+#   loses nothing; see the project's decision records for background.
+#
+#   Quickstart:
+#     docker compose up -d
+#     curl http://localhost:8080/stage?label=status   # expect: {"stage":"status"}
+
+services:
+  # Summary: Serve the label mapping API on port 8080.
+  #
+  # Notes: Read-only; a restart only re-reads the image.
+  app:
+    image: example/labels:1.0
+    ports:
+      - "8080:8080"
