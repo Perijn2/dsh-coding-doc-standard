@@ -1,4 +1,4 @@
-﻿/**
+/**
  * @module public-unit-adapter
  * @author Perijn Huijser
  * Invokes configured project-owned public documentation adapters safely.
@@ -64,13 +64,22 @@ function normalizeViolations(path, payload) {
 }
 
 /**
- * Runs the configured project adapter for an enabled candidate language.
+ * Run the configured project adapter for an enabled candidate language.
  *
- * @param {{path: string, content: string, cwd?: string}} candidate - Pending candidate.
- * @param {Record<string, unknown>} policy - Effective policy configuration.
- * @returns {Promise<string[]>} Normalized blocking diagnostics.
+ * @param {{path: string, content: string, cwd?: string}} candidate (in) - Pending source text; never written.
+ * @param {Record<string, unknown>} policy (in) - Trusted adapter configuration; command, args and timeout are checked before execution.
+ * @param {{signal?: AbortSignal}} [options] (in) - Optional cancellation signal that terminates the adapter child.
+ *
+ * @returns {Promise<string[]>} Normalized blocking diagnostics, including startup,
+ * timeout, cancellation and malformed-output failures; an unconfigured or disabled
+ * adapter returns an empty array. Candidate content remains unchanged on failure.
+ *
+ * @example
+ * ```js
+ * await checkProjectPublicUnits({ path: "example.go", content: "" }, {}); // []
+ * ```
  */
-export async function checkProjectPublicUnits(candidate, policy) {
+export async function checkProjectPublicUnits(candidate, policy, options = {}) {
 	const language = languageFor(candidate.path);
 	if (!language || !policy.publicUnitDocs?.[language]) return [];
 	const adapter = policy.publicUnitAdapters?.[language];
@@ -94,6 +103,7 @@ export async function checkProjectPublicUnits(candidate, policy) {
 			cwd: adapter.cwd ?? candidate.cwd ?? process.cwd(),
 			stdio: ["pipe", "pipe", "pipe"],
 			shell: false,
+			signal: options.signal,
 		});
 		let stdout = "";
 		let stderr = "";
@@ -140,6 +150,10 @@ export async function checkProjectPublicUnits(candidate, policy) {
 				]);
 			}
 		});
+		// An adapter that exits before draining a large JSON payload fails the
+		// write on the stream itself; without this listener that unhandled
+		// 'error' event takes the whole host process down.
+		child.stdin.on("error", () => {});
 		child.stdin.end(input);
 	});
 }

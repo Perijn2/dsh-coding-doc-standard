@@ -61,13 +61,27 @@ function declarationKind(node) {
 	return "declaration";
 }
 
-function hasAttachedJSDoc(source, node) {
+/**
+ * Answers whether one declaration carries an attached JSDoc block.
+ *
+ * Functions, classes, enums, interfaces, and type aliases need a multi-line
+ * block because the contract pass reads tags from it. Variables (fields,
+ * constants) may use a one-line block, matching the layout rule that allows
+ * one-liners exactly where one line carries the whole contract.
+ *
+ * @param {object} source - Parsed TypeScript source file.
+ * @param {object} node - Declaration to inspect.
+ * @param {boolean} [allowSingleLine] - True for variable declarations.
+ * @returns {boolean} True when a JSDoc block sits directly above the node.
+ */
+function hasAttachedJSDoc(source, node, allowSingleLine = false) {
 	const start = node.getStart(source);
 	const ranges =
 		ts.getLeadingCommentRanges(source.text, node.getFullStart()) ?? [];
 	const last = ranges.at(-1);
 	const comment = last ? source.text.slice(last.pos, last.end) : "";
-	if (!comment.startsWith("/**") || !comment.includes("\n")) return false;
+	if (!comment.startsWith("/**")) return false;
+	if (!comment.includes("\n") && !allowSingleLine) return false;
 	const gap = source.text.slice(last.end, start);
 	return /^\s*$/.test(gap) && !/\n\s*\n/.test(gap);
 }
@@ -206,7 +220,7 @@ export function checkTypescriptPublicUnits(candidate, policy) {
 		}
 		if (
 			!ts.isVariableStatement(statement) ||
-			hasAttachedJSDoc(source, statement)
+			hasAttachedJSDoc(source, statement, true)
 		)
 			continue;
 		for (const declaration of statement.declarationList.declarations) {

@@ -8,7 +8,7 @@
  *   Core principle: Exercise the pure validator core directly, with no Cordis host.
  *   Setup: Run npm test from the package root.
  *   Workflow: Each test drives one exported core function against a fixture policy.
- *   API guide: globToRegExp, isIgnoredPath, referenceForPath, buildCandidate,
+ *   API guide: globToRegExp, isIgnoredPath, skillForPath, buildCandidate,
  *     documentedParameterNames, validateCandidate, and renderFindings.
  *   Worked example: node --test tests/validator-core.test.mjs
  */
@@ -24,8 +24,8 @@ import {
 	ignoredPathDefaults,
 	isIgnoredPath,
 	normalizePath,
-	referenceForPath,
 	renderFindings,
+	skillForPath,
 	validateCandidate,
 } from "../src/hook/run.mjs";
 import { documentedParameterNames } from "../src/hook/typescript-public-docs.mjs";
@@ -101,7 +101,7 @@ test("keeps built-in exemptions when a custom ignore list is configured", () => 
 	assert.ok(!isIgnoredPath("src/other.ts", custom));
 });
 
-test("maps a candidate onto its skill reference", () => {
+test("maps a candidate onto its language-pack skill", () => {
 	const compose = {
 		composePatterns: [
 			"compose.yaml",
@@ -110,21 +110,25 @@ test("maps a candidate onto its skill reference", () => {
 			"docker-compose.yml",
 		],
 	};
-	assert.equal(referenceForPath("src/a.ts"), "typescript-javascript.md");
-	assert.equal(referenceForPath("src/a.py"), "python.md");
-	assert.equal(referenceForPath("src/a.rs"), "rust.md");
 	assert.equal(
-		referenceForPath("deploy/docker-compose.yml", compose),
-		"docker-compose.md",
+		skillForPath("src/a.ts"),
+		"coding-doc-standard-typescript-javascript",
+	);
+	assert.equal(skillForPath("src/a.py"), "coding-doc-standard-python");
+	assert.equal(skillForPath("src/a.lua"), "coding-doc-standard-lua");
+	assert.equal(skillForPath("src/a.rs"), "coding-doc-standard-rust");
+	assert.equal(
+		skillForPath("deploy/docker-compose.yml", compose),
+		"coding-doc-standard-docker-compose",
 	);
 	assert.equal(
-		referenceForPath("compose.override.yaml", {
+		skillForPath("compose.override.yaml", {
 			composePatterns: ["compose.*.yaml"],
 		}),
-		"docker-compose.md",
+		"coding-doc-standard-docker-compose",
 	);
-	assert.equal(referenceForPath("notes/plain.txt"), null);
-	assert.equal(referenceForPath("config.yaml"), null);
+	assert.equal(skillForPath("notes/plain.txt"), null);
+	assert.equal(skillForPath("config.yaml"), null);
 });
 
 test("skips payloads it cannot build instead of blaming the standard", async () => {
@@ -215,6 +219,52 @@ test("skips a candidate above the byte limit", async () => {
 	);
 	assert.equal(built.applicable, false);
 	assert.match(built.reason, /40 bytes, above the 16-byte validation limit/u);
+});
+
+test("resolves a relative edit path against the workspace directory", async () => {
+	const target = join(workspace, "relative-edit.ts");
+	await writeFile(target, "one\ntwo\n", "utf8");
+	const built = await buildCandidate(
+		{
+			tool_input: {
+				file_path: "relative-edit.ts",
+				old_string: "two",
+				new_string: "2",
+			},
+		},
+		fixture(),
+		workspace,
+	);
+	assert.equal(built.applicable, true, JSON.stringify(built));
+	assert.equal(built.candidate.content, "one\n2\n");
+});
+
+test("reports an edit that is missing from the given workspace", async () => {
+	const built = await buildCandidate(
+		{
+			tool_input: {
+				file_path: "relative-missing.ts",
+				old_string: "a",
+				new_string: "b",
+			},
+		},
+		fixture(),
+		workspace,
+	);
+	assert.equal(built.applicable, false);
+	assert.match(built.reason, /could not be read/u);
+});
+
+test("stops every check when the caller aborts the execution", async () => {
+	const controller = new AbortController();
+	controller.abort();
+	const result = await validateCandidate(
+		{ path: "notes/todo.txt", content: "hello\n" },
+		fixture({ formatOnWrite: true }),
+		{ cwd: workspace, signal: controller.signal },
+	);
+	assert.equal(result.incomplete, true, JSON.stringify(result));
+	assert.match(result.failures.join(";"), /aborted execution/u);
 });
 
 test("reads parameter names from every documented tag form", () => {
@@ -322,7 +372,7 @@ test("renders every finding with a repair pointer", () => {
 	assert.match(text, /Formatting: call write_formatted/u);
 	assert.match(
 		text,
-		/Rules: skill coding-doc-standard .* references\/typescript-javascript\.md\./u,
+		/Rules: skill coding-doc-standard and its coding-doc-standard-typescript-javascript pack skill\./u,
 	);
 	assert.match(text, /\/coding-doc-verify/u);
 });
@@ -350,7 +400,7 @@ test("omits formatting guidance when no formatting finding is shown", () => {
 	assert.doesNotMatch(text, /format_code/u);
 	assert.match(
 		text,
-		/Rules: skill coding-doc-standard .* references\/python\.md\./u,
+		/Rules: skill coding-doc-standard and its coding-doc-standard-python pack skill\./u,
 	);
 });
 

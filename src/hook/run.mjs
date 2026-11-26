@@ -19,40 +19,31 @@
  *   Worked example: echo '{"tool_input":{"file_path":"a.py","content":""}}' | node run.mjs
  */
 
-import { spawn } from "node:child_process";
 import { existsSync, readFileSync } from "node:fs";
 import { readFile } from "node:fs/promises";
 import { homedir } from "node:os";
-import { basename, dirname, extname, join, resolve } from "node:path";
+import {
+	basename,
+	dirname,
+	extname,
+	isAbsolute,
+	join,
+	resolve,
+} from "node:path";
 import { fileURLToPath } from "node:url";
 import {
 	formatterDeclarationFor,
 	runFormatterAdapter,
 } from "../engine/formatters.mjs";
 import { packCoverageFor, validateWithPacks } from "../engine/index.mjs";
+import { getRegistry } from "../engine/registry.mjs";
 import { checkProjectPublicUnits } from "./public-unit-adapter.mjs";
-import { checkTreeSitterPublicUnits } from "./tree-sitter-public-docs.mjs";
 import { checkTypescriptPublicUnits } from "./typescript-public-docs.mjs";
 
 const sourceRoot = dirname(dirname(fileURLToPath(import.meta.url)));
-const checker = join(sourceRoot, "hook", "checker.py");
 const defaultsPolicy = join(sourceRoot, "policy", "defaults.json");
 const durableRoot = join(homedir(), ".dsh", "plugins", "coding-doc-standard");
 const durablePolicy = join(durableRoot, "policy.json");
-const treeSitterLanguages = [
-	"go",
-	"csharp",
-	"java",
-	"kotlin",
-	"shell",
-	"php",
-	"ruby",
-	"swift",
-	"dart",
-	"haskell",
-	"lua",
-	"scala",
-];
 
 /**
  * Reads effective hook policy from durable state or package defaults.
@@ -69,10 +60,9 @@ export function loadPolicy() {
 	} catch {
 		policy = JSON.parse(readFileSync(defaultsPolicy, "utf8"));
 	}
-	policy.publicUnitDocs ??= {};
-	for (const language of treeSitterLanguages) {
-		policy.publicUnitDocs[language] = policy.languages?.[language] !== false;
-	}
+	// Unit documentation for packed languages is pack-owned; the legacy
+	// publicUnitDocs overlay that gated the checker's syntax table is gone
+	// (ADR-0009).
 	return policy;
 }
 
@@ -81,11 +71,14 @@ export function loadPolicy() {
  *
  * Vendored, generated, minified, and lockfile paths are never a documentation
  * or formatting problem the agent can fix, so blocking them is pure friction.
+ * `skill` exempts the plugin's own skill directories: their example files
+ * demonstrate the standard and follow its layout, not the checker's rules.
  */
 export const ignoredPathDefaults = [
 	"**/node_modules/**",
 	"**/bower_components/**",
 	"**/vendor/**",
+	"**/skill/**",
 	"**/dist/**",
 	"**/build/**",
 	"**/out/**",
@@ -111,42 +104,6 @@ export const ignoredPathDefaults = [
 	"go.sum",
 	"Gemfile.lock",
 ];
-
-const referenceByExtension = new Map([
-	[".py", "python.md"],
-	[".pyi", "python.md"],
-	[".ts", "typescript-javascript.md"],
-	[".tsx", "typescript-javascript.md"],
-	[".mts", "typescript-javascript.md"],
-	[".cts", "typescript-javascript.md"],
-	[".js", "typescript-javascript.md"],
-	[".jsx", "typescript-javascript.md"],
-	[".mjs", "typescript-javascript.md"],
-	[".cjs", "typescript-javascript.md"],
-	[".rs", "rust.md"],
-	[".c", "c-cpp.md"],
-	[".h", "c-cpp.md"],
-	[".cpp", "c-cpp.md"],
-	[".cc", "c-cpp.md"],
-	[".hpp", "c-cpp.md"],
-	[".hxx", "c-cpp.md"],
-	[".go", "go.md"],
-	[".cs", "csharp.md"],
-	[".java", "java.md"],
-	[".kt", "kotlin.md"],
-	[".kts", "kotlin.md"],
-	[".php", "php.md"],
-	[".rb", "ruby.md"],
-	[".swift", "swift.md"],
-	[".dart", "dart.md"],
-	[".hs", "haskell.md"],
-	[".lua", "lua.md"],
-	[".scala", "scala.md"],
-	[".sh", "shell.md"],
-	[".bash", "shell.md"],
-	[".ksh", "shell.md"],
-	[".zsh", "shell.md"],
-]);
 
 /**
  * Normalizes a path for policy pattern matching.
@@ -226,20 +183,38 @@ export function isIgnoredPath(candidatePath, policy = loadPolicy()) {
 }
 
 /**
- * Maps a candidate path onto the skill reference that documents its rules.
+ * Maps a candidate path onto the language-pack skill that documents its rules.
+ *
+ * Every installed pack ships a skill named coding-doc-standard-<pack id> that
+ * carries its exact header syntax and formatter, so the pointer is derived
+ * from the live registry rather than a fixed extension table: a language
+ * without an installed pack has no pack skill to name.
  *
  * @param {string} candidatePath - Path of the pending candidate.
  * @param {Record<string, unknown>} [policy] - Effective policy supplying compose patterns.
- * @returns {string | null} Reference filename, or null when none applies.
+ * @returns {string | null} Pack skill name, or null when no installed pack covers the path.
  */
-export function referenceForPath(candidatePath, policy = {}) {
+export function skillForPath(candidatePath, policy = {}) {
 	const file = basename(normalizePath(candidatePath)).toLowerCase();
 	const patterns = Array.isArray(policy.composePatterns)
 		? policy.composePatterns
 		: [];
 	if (patterns.some((pattern) => globToRegExp(String(pattern)).test(file)))
-		return "docker-compose.md";
-	return referenceByExtension.get(extname(file)) ?? null;
+		return "coding-doc-standard-docker-compose";
+	const extension = extname(file);
+	for (const pack of getRegistry().packs.values()) {
+		for (const profile of pack.profiles.values()) {
+			const covered =
+				(profile.extensions ?? []).some(
+					(value) => String(value).toLowerCase() === extension,
+				) ||
+				(profile.filenames ?? []).some((value) =>
+					globToRegExp(String(value).toLowerCase()).test(file),
+				);
+			if (covered) return `coding-doc-standard-${pack.manifest.id}`;
+		}
+	}
+	return null;
 }
 
 /**
@@ -254,27 +229,36 @@ function editMatchCount(text, needle) {
 }
 
 /**
- * Applies one literal edit pair, tolerating line-ending drift.
+ * Apply one literal edit pair, tolerating line-ending drift.
  *
- * The exact bytes are tried first, so a normal edit keeps its exact behavior.
- * When the pair matches zero copies only because the file stores CRLF while
- * the pending pair uses LF (or the reverse), the match is retried in a
- * line-ending-normalized copy and the file's own dominant ending is restored,
- * so a legitimate edit is validated instead of silently skipped. `replaceAll`
- * permits and requires applying the pair to every occurrence.
+ * Try exact bytes first; otherwise normalize CRLF to LF and restore the file's
+ * CRLF ending when present. Replacement text is literal, including dollar signs.
  *
- * @param {string} before - Existing file content.
- * @param {string} oldString - Literal text to replace.
- * @param {string} newString - Replacement text.
- * @param {boolean} replaceAll - Replace every occurrence instead of one.
- * @returns {string | null} Edited content, or null when no single valid interpretation exists.
+ * @param {string} before     (in) - Existing file content; never modified.
+ * @param {string} oldString  (in) - Nonempty literal text to replace.
+ * @param {string} newString  (in) - Literal replacement text, including empty text.
+ * @param {boolean} replaceAll (in) - True to replace every non-overlapping match; false requires exactly one.
+ *
+ * @returns {string | null} Edited content on an unambiguous match; null for an
+ * empty needle, no match, or multiple matches without replaceAll. Inputs stay
+ * unchanged on failure. Strings and a boolean are trusted; invalid types can
+ * throw TypeError.
+ *
+ * @example
+ * ```js
+ * applyEditPair("hello world", "world", "$&", false); // "hello $&"
+ * applyEditPair("a a", "a", "b", false); // null
+ * applyEditPair("a a", "a", "b", true); // "b b"
+ * applyEditPair("a", "", "b", false); // null
+ * ```
  */
-function applyEditPair(before, oldString, newString, replaceAll) {
+export function applyEditPair(before, oldString, newString, replaceAll) {
+	if (oldString === "") return null;
 	const exact = editMatchCount(before, oldString);
 	if (exact > 0 && (replaceAll || exact === 1))
 		return replaceAll
 			? before.split(oldString).join(newString)
-			: before.replace(oldString, newString);
+			: before.replace(oldString, () => newString);
 	const lineEnding = before.includes("\r\n") ? "\r\n" : "\n";
 	const normalizedBefore = before.replace(/\r\n/g, "\n");
 	const normalizedOld = oldString.replace(/\r\n/g, "\n");
@@ -283,7 +267,7 @@ function applyEditPair(before, oldString, newString, replaceAll) {
 	if (tolerant === 0 || (!replaceAll && tolerant > 1)) return null;
 	const edited = replaceAll
 		? normalizedBefore.split(normalizedOld).join(normalizedNew)
-		: normalizedBefore.replace(normalizedOld, normalizedNew);
+		: normalizedBefore.replace(normalizedOld, () => normalizedNew);
 	return edited.replace(/\n/g, lineEnding);
 }
 
@@ -297,9 +281,14 @@ function applyEditPair(before, oldString, newString, replaceAll) {
  *
  * @param {Record<string, unknown>} payload - Tool payload exposing `tool_input`.
  * @param {Record<string, unknown>} [policy] - Effective policy.
+ * @param {string} [cwd] - Workspace root relative tool paths resolve against.
  * @returns {Promise<{applicable: false, reason: string} | {applicable: true, candidate: {path: string, content: string}}>} A skip reason, or the complete candidate.
  */
-export async function buildCandidate(payload, policy = loadPolicy()) {
+export async function buildCandidate(
+	payload,
+	policy = loadPolicy(),
+	cwd = process.cwd(),
+) {
 	const input = payload?.tool_input ?? payload?.arguments ?? payload;
 	if (!input || typeof input !== "object")
 		return {
@@ -323,7 +312,14 @@ export async function buildCandidate(payload, policy = loadPolicy()) {
 	) {
 		let before = null;
 		try {
-			before = await readFile(path, "utf8");
+			// Relative tool paths are workspace-relative, so the pre-edit text
+			// must be read against the workspace the tool will actually write
+			// in, not the host process directory: reading it against the wrong
+			// cwd skipped every relative edit and silently disarmed the gate.
+			before = await readFile(
+				isAbsolute(path) ? path : resolve(cwd, path),
+				"utf8",
+			);
 		} catch (error) {
 			return {
 				applicable: false,
@@ -412,97 +408,19 @@ export async function candidateFromPayload(payload) {
 }
 
 /**
-/**
- * Spawns one process and captures its streams (rustfmt migration path only).
- *
- * @param {string} command - Executable path.
- * @param {string[]} args - Argument list.
- * @param {string} content - Standard-input payload.
- * @param {string} cwd - Working directory.
- * @param {boolean} [shell] - Whether to spawn through the shell.
- * @returns {Promise<{code: number | null, stdout: string, stderr: string, error: Error | null}>} Run result.
- */
-function execute(
-	command,
-	args,
-	content,
-	cwd,
-	shell = process.platform === "win32",
-) {
-	return new Promise((resolve) => {
-		const child = spawn(command, args, {
-			cwd,
-			stdio: ["pipe", "pipe", "pipe"],
-			shell,
-		});
-		let stdout = "";
-		let stderr = "";
-		child.stdout.setEncoding("utf8");
-		child.stderr.setEncoding("utf8");
-		child.stdout.on("data", (chunk) => {
-			stdout += chunk;
-		});
-		child.stderr.on("data", (chunk) => {
-			stderr += chunk;
-		});
-		child.once("error", (error) =>
-			resolve({ code: null, stdout, stderr, error }),
-		);
-		child.once("exit", (code) => resolve({ code, stdout, stderr }));
-		child.stdin.end(content);
-	});
-}
-
-/**
- * Runs the project rustfmt for one candidate (migration exception, REQ-028 audit).
- *
- * @param {string} command - rustfmt executable.
- * @param {string} content - Candidate content.
- * @param {string} cwd - Working directory for the run.
- * @returns {Promise<null | {unavailable?: boolean, message?: string}>} Null when formatted; otherwise the outcome.
- */
-async function runRustfmt(command, content, cwd) {
-	const result = await execute(
-		command,
-		["--emit", "stdout"],
-		content,
-		cwd,
-		false,
-	);
-	if (result.error?.code === "ENOENT") return { unavailable: true };
-	if (result.code !== 0) {
-		const output = (result.stderr || result.stdout).trim();
-		return {
-			message: [
-				`[doc-standard] rustfmt could not format.`,
-				`Executable: ${command}`,
-				`Exit: ${result.code ?? "not started"}`,
-				output ? `Formatter output:\n${output}` : "Formatter output: none.",
-				result.error ? `Start error: ${result.error.message}` : null,
-			]
-				.filter(Boolean)
-				.join("\n"),
-		};
-	}
-	return result.stdout === content
-		? null
-		: { message: "[doc-standard] must match rustfmt formatting." };
-}
-
-/**
  * Identifies the pre-write formatter profile for a candidate path.
  *
  * The routing derives from pack formatter declarations, not engine knowledge:
  * each embedded pack's declaration carries the settings key that gates it, and
  * the pack id maps onto this module's legacy profile keys for write-through
- * routing. Rust remains the documented migration exception.
+ * routing. The Rust pack declares the project-toolchain rustfmt through the
+ * external-command adapter, so no engine-side tool branch exists anymore.
  *
  * @param {string} path - Candidate filesystem path.
  * @param {Record<string, unknown>} policy - Effective policy.
  * @returns {'python' | 'typescriptJavascript' | 'rust' | 'dockerCompose' | null} Formatter profile.
  */
 export function formatterProfile(path, policy) {
-	if (extname(path).toLowerCase() === ".rs" && policy.formatRust) return "rust";
 	const declaration = formatterDeclarationFor(path);
 	if (!declaration) return null;
 	const settingsKey = declaration.formatter.settingsKey;
@@ -511,6 +429,7 @@ export function formatterProfile(path, policy) {
 		python: "python",
 		"typescript-javascript": "typescriptJavascript",
 		"docker-compose": "dockerCompose",
+		rust: "rust",
 	};
 	return keyByPackId[declaration.pack.manifest.id] ?? null;
 }
@@ -519,145 +438,24 @@ export function formatterProfile(path, policy) {
  * Checks a candidate against its pack-declared formatter adapter without modifying files.
  *
  * The engine carries no formatter knowledge: the covering pack profile declares
- * the adapter, the pinned dependency, and the argument template. Rust remains a
- * documented migration exception (REQ-028 audit exception) until the Rust pack
- * ships, because its formatter is the project toolchain rather than a managed one.
+ * the adapter, the pinned dependency, and the argument template. A project
+ * toolchain formatter (Rust's rustfmt) runs when the binary exists and
+ * degrades per blockOnMissingFormatter when it does not.
  *
  * @param {{path: string, content: string}} candidate - Proposed file state.
  * @param {Record<string, unknown>} [policy] - Effective policy override for testing.
  * @param {string} [cwd] - Workspace root the formatter runs in and resolves paths against.
+ * @param {{signal?: AbortSignal}} [options] - Cancellation that kills the formatter.
  * @returns {Promise<string | null>} Blocking message, or null when formatting passes or is disabled.
  */
 export async function checkFormatting(
 	candidate,
 	policy = loadPolicy(),
 	cwd = process.cwd(),
+	options = {},
 ) {
 	if (!policy.formatOnWrite) return null;
-	// Migration exception: the Rust pack has not shipped, so the opt-in
-	// project-rustfmt check stays engine-side until it does.
-	if (extname(candidate.path).toLowerCase() === ".rs" && policy.formatRust) {
-		const command = process.platform === "win32" ? "rustfmt.exe" : "rustfmt";
-		const target = resolve(cwd, candidate.path);
-		const result = await runRustfmt(
-			command,
-			candidate.content,
-			dirname(target),
-		);
-		if (result === null) return null;
-		if (result.unavailable)
-			return policy.blockOnMissingFormatter !== false
-				? "[doc-standard] Required formatter is unavailable: rustfmt."
-				: null;
-		return result.message;
-	}
-	return runFormatterAdapter(candidate, policy, cwd);
-}
-
-/**
- * Resolves the policy document handed to the Python documentation checker.
- *
- * This is the fallback for standalone runs. The host passes the policy it is
- * enforcing right now through the environment, so a durable write that failed
- * or was interrupted can never leave the checker on a stale rule set.
- *
- * @param {Record<string, unknown>} [policy] - Effective policy optionally carrying `policyPath`.
- * @returns {string} Filesystem path of the policy document for the checker.
- */
-function checkerPolicyPath(policy = {}) {
-	if (typeof policy.policyPath === "string" && policy.policyPath)
-		return policy.policyPath;
-	return (
-		process.env.CODING_DOC_STANDARD_POLICY ??
-		(existsSync(durablePolicy) ? durablePolicy : defaultsPolicy)
-	);
-}
-
-/**
- * Largest live policy document handed to the checker through its environment.
- *
- * A child process environment is a bounded block, so an oversized policy falls
- * back to the durable file rather than failing to start at all.
- */
-const MAX_INLINE_POLICY_BYTES = 16_000;
-
-/**
- * Serializes the live policy for the documentation checker.
- *
- * @param {Record<string, unknown>} policy - Effective policy.
- * @returns {string} JSON document, or an empty string to use the file fallback.
- */
-function inlineCheckerPolicy(policy) {
-	if (!policy || typeof policy !== "object" || Object.keys(policy).length === 0)
-		return "";
-	const serialized = JSON.stringify(policy);
-	return serialized.length <= MAX_INLINE_POLICY_BYTES ? serialized : "";
-}
-
-/**
- * Runs the Python documentation checker and captures its diagnostics.
- *
- * Capturing stdout and stderr lets the host aggregate checker findings with every
- * other pass instead of letting one child process print straight past the caller.
- *
- * @param {{path: string, content: string}} candidate - Proposed file state.
- * @param {Record<string, unknown>} [policy] - Effective policy.
- * @returns {Promise<{code: number, lines: string[]}>} Checker exit code and trimmed diagnostic lines.
- */
-export function runCheckerOutput(candidate, policy = {}) {
-	const python = process.platform === "win32" ? "py" : "python3";
-	const policyPath = checkerPolicyPath(policy);
-	const args =
-		process.platform === "win32"
-			? ["-3", checker, candidate.path, "--policy", policyPath, "--stdin"]
-			: [checker, candidate.path, "--policy", policyPath, "--stdin"];
-	const inline = inlineCheckerPolicy(policy);
-	return new Promise((resolve, reject) => {
-		const child = spawn(python, args, {
-			stdio: ["pipe", "pipe", "pipe"],
-			windowsHide: true,
-			// Pin the child to UTF-8 I/O. Without this a BOM-prefixed candidate
-			// reaches the checker through the Windows locale codec, every header
-			// regex fails, and a documented file is reported as undocumented.
-			// checker.py decodes with utf-8-sig for the same reason.
-			env: {
-				...process.env,
-				PYTHONUTF8: "1",
-				PYTHONIOENCODING: "utf-8",
-				...(inline ? { CODING_DOC_STANDARD_POLICY_JSON: inline } : {}),
-			},
-		});
-		let stdout = "";
-		let stderr = "";
-		child.stdout.setEncoding("utf8");
-		child.stderr.setEncoding("utf8");
-		child.stdout.on("data", (chunk) => {
-			stdout += chunk;
-		});
-		child.stderr.on("data", (chunk) => {
-			stderr += chunk;
-		});
-		child.once("error", reject);
-		child.once("exit", (code) => {
-			const lines = `${stdout ? `${stdout}\n` : ""}${stderr}`
-				.split(/\r?\n/)
-				.map((line) => line.trim())
-				.filter((line) => line !== "");
-			resolve({ code: code ?? 1, lines });
-		});
-		child.stdin.end(candidate.content);
-	});
-}
-
-/**
- * Runs the Python documentation checker for one pending candidate.
- *
- * @param {{path: string, content: string}} candidate - Proposed file state.
- * @returns {Promise<number>} Checker exit code.
- */
-export async function runChecker(candidate) {
-	const { code } = await runCheckerOutput(candidate);
-	return code;
+	return runFormatterAdapter(candidate, policy, cwd, options);
 }
 
 /**
@@ -734,10 +532,10 @@ export function renderFindings(result, options = {}) {
 		guidance.push(
 			"Formatting: call write_formatted with the language and this file_path: it formats, checks, and writes the result in one call.",
 		);
-	const reference = referenceForPath(path);
+	const skill = skillForPath(path);
 	guidance.push(
-		reference
-			? `Rules: skill coding-doc-standard → references/${reference}.`
+		skill
+			? `Rules: skill coding-doc-standard and its ${skill} pack skill.`
 			: "Rules: skill coding-doc-standard.",
 	);
 	guidance.push("Full workspace report: /coding-doc-verify.");
@@ -757,7 +555,7 @@ export function renderFindings(result, options = {}) {
  *
  * @param {{path: string, content: string}} candidate - Proposed file state.
  * @param {Record<string, unknown>} [policy] - Effective policy.
- * @param {{timeoutMs?: number, cwd?: string}} [options] - Validation budget and workspace root.
+ * @param {{timeoutMs?: number, cwd?: string, signal?: AbortSignal}} [options] - Validation budget, workspace root, and cancellation.
  * @returns {Promise<{status: "pass" | "violations" | "error", findings: {pass: string, text: string}[], failures: string[], incomplete: boolean, elapsedMs: number, candidate: {path: string, bytes: number}}>} Aggregated validation outcome.
  */
 export async function validateCandidate(
@@ -789,9 +587,19 @@ export async function validateCandidate(
 			);
 		}
 	};
-	// A covering language pack owns documentation checking for its paths: the
-	// legacy Python checker and tree-sitter table stay out of the way so one
-	// candidate is never judged by two rule sets (Phase 1 of ADR-0007).
+	// One signal carries the budget and the caller's cancellation into every
+	// spawn the passes make: a hung formatter or checker used to outlive the
+	// validation it belonged to, so a slow file stacked one live child per
+	// retry while the host kept waiting on nothing.
+	const budgetSignal = AbortSignal.timeout(timeoutMs);
+	const kill = options.signal
+		? AbortSignal.any([budgetSignal, options.signal])
+		: budgetSignal;
+	// A covering language pack owns documentation checking for its paths: its
+	// codec decodes the file header and its unit provider judges unit
+	// documents, so the checker interpreter and the legacy tree-sitter table
+	// are gone (ADR-0007, ADR-0008, ADR-0009). Paths no pack covers keep only
+	// the source-level public-unit pass.
 	let packCoverage = null;
 	try {
 		packCoverage = packCoverageFor(candidate.path, policy);
@@ -800,36 +608,25 @@ export async function validateCandidate(
 	}
 	const passes = [
 		runPass("formatting", async () => {
-			add("formatting", await checkFormatting(candidate, policy, cwd));
+			add(
+				"formatting",
+				await checkFormatting(candidate, policy, cwd, { signal: kill }),
+			);
 		}),
 	];
-	if (!packCoverage) {
-		passes.push(
-			runPass("documentation", async () => {
-				const { code, lines } = await runCheckerOutput(candidate, policy);
-				if (code === 0) return;
-				if (code === 2) {
-					for (const line of lines) add("documentation", line);
-					return;
-				}
-				failures.push(
-					`documentation checker exited ${code}${lines.length ? `: ${lines[0]}` : ""}`,
-				);
-			}),
-			runPass("public units", async () => {
-				for (const line of checkSourcePublicUnits(candidate, policy))
-					add("public units", line);
-			}),
-			runPass("tree-sitter", async () => {
-				for (const line of await checkTreeSitterPublicUnits(candidate, policy))
-					add("tree-sitter", line);
-			}),
-		);
-	} else {
+	if (packCoverage) {
 		passes.push(
 			runPass("packs", async () => {
 				for (const line of await validateWithPacks(candidate, packCoverage))
 					add("packs", line);
+			}),
+		);
+	}
+	if (!packCoverage?.profile.units) {
+		passes.push(
+			runPass("public units", async () => {
+				for (const line of checkSourcePublicUnits(candidate, policy))
+					add("public units", line);
 			}),
 		);
 	}
@@ -838,26 +635,33 @@ export async function validateCandidate(
 			const violations = await checkProjectPublicUnits(
 				{ ...candidate, cwd },
 				policy,
+				{ signal: kill },
 			);
 			for (const line of violations) add("project adapter", line);
 		}),
 	);
 	const work = Promise.all(passes);
-	let timer;
-	const budget = new Promise((_resolve, reject) => {
-		timer = setTimeout(
-			() => reject(new Error(`exceeded the ${timeoutMs} ms validation budget`)),
-			timeoutMs,
-		);
+	// The race names why the checks stopped: budget expiry or the caller
+	// aborting the pending execution. The kill signal already ends every
+	// child, so nothing outlives this decision.
+	const stopped = new Promise((_resolve, reject) => {
+		const stop = () =>
+			reject(
+				new Error(
+					options.signal?.aborted
+						? "stopped by an aborted execution"
+						: `exceeded the ${timeoutMs} ms validation budget`,
+				),
+			);
+		if (kill.aborted) stop();
+		else kill.addEventListener("abort", stop, { once: true });
 	});
 	let incomplete = false;
 	try {
-		await Promise.race([work, budget]);
+		await Promise.race([work, stopped]);
 	} catch (error) {
 		incomplete = true;
 		failures.push(`validation ${error?.message ?? "failed"}`);
-	} finally {
-		clearTimeout(timer);
 	}
 	const status =
 		findings.length > 0 ? "violations" : failures.length > 0 ? "error" : "pass";
@@ -886,7 +690,7 @@ export async function runHook(payload, options = {}) {
 	if (policy.enabled === false) return 0;
 	let built;
 	try {
-		built = await buildCandidate(payload, policy);
+		built = await buildCandidate(payload, policy, options.cwd);
 	} catch (error) {
 		console.error(
 			`[doc-standard] Validator could not read the pending change: ${error.message}`,

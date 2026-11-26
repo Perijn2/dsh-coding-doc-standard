@@ -14,11 +14,16 @@
  */
 
 import assert from "node:assert/strict";
-import { mkdtemp, rm, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
-import { formatterDeclarationFor } from "../src/engine/formatters.mjs";
+import {
+	formatterDeclarationFor,
+	formatWithDeclaredFormatter,
+	runFormatterAdapter,
+} from "../src/engine/formatters.mjs";
+import { loadPacks } from "../src/engine/registry.mjs";
 import { checkProjectPublicUnits } from "../src/hook/public-unit-adapter.mjs";
 import {
 	buildCandidate,
@@ -102,7 +107,12 @@ test("resolves formatter declarations from packs, never from engine knowledge", 
 		formatterDeclarationFor("compose.yaml").formatter.label,
 		"prettier 3.9.6",
 	);
-	assert.equal(formatterDeclarationFor("example.rs"), null);
+	// The Rust pack declares the project-toolchain rustfmt through the
+	// external-command adapter, gated by the opt-in formatRust setting.
+	const rustFormatter = formatterDeclarationFor("example.rs");
+	assert.equal(rustFormatter.formatter.adapter, "external-command");
+	assert.equal(rustFormatter.formatter.settingsKey, "formatRust");
+	assert.equal(rustFormatter.formatter.dependency.bin, "rustfmt");
 	assert.equal(formatterDeclarationFor("example.cpp"), null);
 	for (const path of [
 		"example.go",
@@ -283,6 +293,41 @@ test("fails closed for malformed and failing project adapters", async () => {
 	assert.match(failing[0], /failed: exit 7/);
 });
 
+test("cancels a running project adapter before its own timeout", async () => {
+	const failures = await checkProjectPublicUnits(
+		{ path: "example.go", content: "pending" },
+		{
+			publicUnitDocs: { go: true },
+			publicUnitAdapters: {
+				go: {
+					command: process.execPath,
+					args: ["-e", "setInterval(() => {}, 1000)"],
+					timeoutMs: 2000,
+				},
+			},
+		},
+		{ signal: AbortSignal.timeout(100) },
+	);
+	assert.match(failures[0], /aborted/iu);
+});
+
+test("survives a large pending payload when the adapter exits unread", async () => {
+	const failures = await checkProjectPublicUnits(
+		{ path: "example.go", content: "x".repeat(4_000_000) },
+		{
+			...loadPolicy(),
+			publicUnitDocs: { go: true },
+			publicUnitAdapters: {
+				go: {
+					command: process.execPath,
+					args: ["-e", "setTimeout(() => process.exit(3), 0)"],
+				},
+			},
+		},
+	);
+	assert.match(failures[0], /failed: exit 3/u);
+});
+
 test("accepts a rustfmt-formatted Rust candidate when the opt-in profile is enabled", async () => {
 	assert.equal(
 		await checkFormatting(
@@ -291,6 +336,251 @@ test("accepts a rustfmt-formatted Rust candidate when the opt-in profile is enab
 		),
 		null,
 	);
+});
+
+/**
+ * Writes one fixture pack carrying a project-sourced formatter into a packs root.
+ *
+ * @param {string} packsRoot - Temporary languages root passed to loadPacks.
+ * @param {object} formatter - Formatter declaration to embed in the profile.
+ * @returns {Promise<void>} Completion once the pack files exist.
+ */
+async function writeFakePack(packsRoot, formatter) {
+	const packDir = join(packsRoot, "fake");
+	await mkdir(join(packDir, "profiles", "modern"), { recursive: true });
+	await writeFile(
+		join(packDir, "pack.json"),
+		JSON.stringify({
+			id: "fake",
+			label: "Fake",
+			packVersion: "1.0.0",
+			language: { name: "Fake", defaultProfile: "modern" },
+			profiles: ["modern"],
+		}),
+	);
+	await writeFile(
+		join(packDir, "profiles", "modern", "profile.json"),
+		JSON.stringify({
+			id: "modern",
+			languageVersions: "*",
+			extensions: [".fake"],
+			codec: {
+				headerSyntax: "line",
+				headerToken: "#",
+				fields: { author: "Author:", summary: "Summary:" },
+			},
+			units: {
+				provider: "regex",
+				pattern: "^([a-z]+)\\s*\\(",
+				kind: "function",
+			},
+			formatter,
+		}),
+	);
+}
+
+test("degrades a missing project formatter per blockOnMissingFormatter", async () => {
+	await withTemporaryDirectory(async (directory) => {
+		const packsRoot = join(directory, "packs");
+		await writeFakePack(packsRoot, {
+			adapter: "external-command",
+			checkMode: "stdout-diff",
+			label: "fakefmt (project toolchain)",
+			settingsKey: "formatFake",
+			dependency: {
+				source: "project",
+				bin: "definitely-missing-fakefmt-12345",
+			},
+			args: [],
+			cleanExit: [0],
+			unavailableHint: "Install fakefmt in the project.",
+		});
+		const registry = loadPacks(packsRoot);
+		assert.equal(registry.excluded.length, 0);
+		const candidate = { path: "example.fake", content: "alpha()\n" };
+		const allowed = await runFormatterAdapter(
+			candidate,
+			{ formatOnWrite: true, formatFake: true, blockOnMissingFormatter: false },
+			directory,
+			{ registry },
+		);
+		assert.equal(allowed, null);
+		const blocked = await runFormatterAdapter(
+			candidate,
+			{ formatOnWrite: true, formatFake: true, blockOnMissingFormatter: true },
+			directory,
+			{ registry },
+		);
+		assert.match(blocked, /fakefmt \(project toolchain\)/);
+		assert.match(blocked, /Install fakefmt in the project\./);
+		const gated = await runFormatterAdapter(
+			candidate,
+			{ formatOnWrite: true, formatFake: false, blockOnMissingFormatter: true },
+			directory,
+			{ registry },
+		);
+		assert.equal(
+			gated,
+			null,
+			"the settings key gates the check before any spawn",
+		);
+	});
+});
+
+test("runs a pack-declared external-command formatter when the binary exists", async () => {
+	await withTemporaryDirectory(async (directory) => {
+		await writeFile(
+			join(directory, "echo.mjs"),
+			'let s = ""; process.stdin.on("data", (c) => (s += c)).on("end", () => process.stdout.write(s));',
+		);
+		await writeFile(
+			join(directory, "upper.mjs"),
+			'let s = ""; process.stdin.on("data", (c) => (s += c)).on("end", () => process.stdout.write(s.toUpperCase()));',
+		);
+		const formatterFor = (script) => ({
+			adapter: "external-command",
+			checkMode: "stdout-diff",
+			label: "fakefmt",
+			settingsKey: "formatFake",
+			dependency: { source: "project", bin: process.execPath },
+			args: [script],
+			cleanExit: [0],
+		});
+		const packsRoot = join(directory, "packs");
+		const candidate = { path: "example.fake", content: "alpha()\n" };
+		await writeFakePack(packsRoot, formatterFor(join(directory, "echo.mjs")));
+		const clean = await runFormatterAdapter(
+			candidate,
+			{ formatOnWrite: true, formatFake: true },
+			directory,
+			{ registry: loadPacks(packsRoot) },
+		);
+		assert.equal(clean, null, "identical stdout means already formatted");
+		await writeFakePack(packsRoot, formatterFor(join(directory, "upper.mjs")));
+		const changed = await runFormatterAdapter(
+			candidate,
+			{ formatOnWrite: true, formatFake: true },
+			directory,
+			{ registry: loadPacks(packsRoot) },
+		);
+		assert.match(changed, /must match fakefmt formatting/);
+	});
+});
+
+test("excludes a full profile whose declared formatter is invalid", async () => {
+	await withTemporaryDirectory(async (directory) => {
+		const packsRoot = join(directory, "packs");
+		await writeFakePack(packsRoot, {
+			adapter: "bogus-adapter",
+			dependency: { source: "project", bin: "x" },
+		});
+		const registry = loadPacks(packsRoot);
+		assert.equal(registry.packs.size, 0);
+		assert.equal(registry.excluded.length, 1);
+		assert.match(registry.excluded[0].reason, /unsupported formatter adapter/);
+	});
+});
+
+test("formatWithDeclaredFormatter returns the pack formatter's stdout", async () => {
+	await withTemporaryDirectory(async (directory) => {
+		await writeFile(
+			join(directory, "upper.mjs"),
+			'let s = ""; process.stdin.on("data", (c) => (s += c)).on("end", () => process.stdout.write(s.toUpperCase()));',
+		);
+		const packsRoot = join(directory, "packs");
+		await writeFakePack(packsRoot, {
+			adapter: "external-command",
+			checkMode: "stdout-diff",
+			label: "fakefmt",
+			settingsKey: "formatFake",
+			dependency: { source: "project", bin: process.execPath },
+			args: [join(directory, "upper.mjs")],
+			cleanExit: [0],
+		});
+		const registry = loadPacks(packsRoot);
+		const candidate = { path: "example.fake", content: "alpha()\n" };
+		const result = await formatWithDeclaredFormatter(
+			candidate,
+			{ formatFake: true },
+			directory,
+			{ registry },
+		);
+		assert.equal(result.status, "formatted");
+		assert.equal(result.text, "ALPHA()\n");
+		assert.equal(result.changed, true);
+		const disabled = await formatWithDeclaredFormatter(
+			candidate,
+			{ formatFake: false },
+			directory,
+			{ registry },
+		);
+		assert.equal(disabled.status, "disabled");
+	});
+});
+
+test("captures complete large formatter stdout", async () => {
+	await withTemporaryDirectory(async (directory) => {
+		const expected = "formatted\n".repeat(100_000);
+		await writeFile(
+			join(directory, "delayed.mjs"),
+			`process.stdout.end(${JSON.stringify(expected)});`,
+		);
+		const packsRoot = join(directory, "packs");
+		await writeFakePack(packsRoot, {
+			adapter: "external-command",
+			checkMode: "stdout-diff",
+			dependency: { source: "project", bin: process.execPath },
+			args: [join(directory, "delayed.mjs")],
+			cleanExit: [0],
+		});
+		const result = await formatWithDeclaredFormatter(
+			{ path: "example.fake", content: "before\n" },
+			{},
+			directory,
+			{ registry: loadPacks(packsRoot) },
+		);
+		assert.equal(result.status, "formatted");
+		assert.equal(result.text.length, expected.length);
+		assert.equal(result.text, expected);
+	});
+});
+
+test("formatWithDeclaredFormatter reports a missing project binary per policy", async () => {
+	await withTemporaryDirectory(async (directory) => {
+		const packsRoot = join(directory, "packs");
+		await writeFakePack(packsRoot, {
+			adapter: "external-command",
+			checkMode: "stdout-diff",
+			label: "fakefmt",
+			settingsKey: "formatFake",
+			dependency: {
+				source: "project",
+				bin: "definitely-missing-fakefmt-12345",
+			},
+			args: [],
+			cleanExit: [0],
+			unavailableHint: "Install fakefmt in the project.",
+		});
+		const registry = loadPacks(packsRoot);
+		const candidate = { path: "example.fake", content: "alpha()\n" };
+		const blocked = await formatWithDeclaredFormatter(
+			candidate,
+			{ formatFake: true, blockOnMissingFormatter: true },
+			directory,
+			{ registry },
+		);
+		assert.equal(blocked.status, "unavailable");
+		assert.equal(blocked.blocked, true);
+		assert.match(blocked.message, /Install fakefmt in the project\./);
+		const allowed = await formatWithDeclaredFormatter(
+			candidate,
+			{ formatFake: true, blockOnMissingFormatter: false },
+			directory,
+			{ registry },
+		);
+		assert.equal(allowed.status, "unavailable");
+		assert.equal(allowed.blocked, false);
+	});
 });
 
 test("blocks a Python candidate that Ruff would reformat", async () => {
